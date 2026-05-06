@@ -5,7 +5,5 @@ exact = false
 disable = false
 
 [test]
-preload = []
-coverage = false
 coverageReporter = ["text", "lcov"]
 coverageDir = "coverage"
