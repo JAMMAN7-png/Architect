@@ -1,0 +1,24 @@
+# Force LF line endings everywhere — biome enforces lineEnding=lf and Windows
+# checkouts default to CRLF without this file.
+* text=auto eol=lf
+*.md text eol=lf
+*.json text eol=lf
+*.toml text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+*.ts text eol=lf
+*.tsx text eol=lf
+*.js text eol=lf
+*.cjs text eol=lf
+*.mjs text eol=lf
+*.sh text eol=lf
+*.ps1 text eol=lf
+
+# Binary
+*.png binary
+*.jpg binary
+*.gif binary
+*.ico binary
+*.zip binary
+*.gz binary
+*.lockb binary
