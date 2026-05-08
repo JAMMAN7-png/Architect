@@ -115,10 +115,10 @@ export function makeGatePage(spec: GatePageSpec): PageDefinition {
       if (pending !== spec.gate) return [back];
 
       return [
-        [{ text: "✅ Approve", callback_data: "action:architect:approve" }],
-        [{ text: "✏️ Edit", callback_data: "action:architect:edit" }],
-        [{ text: "🔁 Revise", callback_data: "action:architect:revise" }],
-        [{ text: "❌ Reject", callback_data: "action:architect:reject" }],
+        [{ text: "🟢 ✅ Approve", callback_data: "action:architect:approve" }],
+        [{ text: "✏ Edit", callback_data: "action:architect:edit" }],
+        [{ text: "🟡 🔁 Revise", callback_data: "action:architect:revise" }],
+        [{ text: "🛑 ❌ Reject", callback_data: "action:architect:reject" }],
         back,
       ];
     },

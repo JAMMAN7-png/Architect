@@ -31,17 +31,17 @@ export const settingsOutputPage: PageDefinition = {
     return [
       [
         {
-          text: `${cfg.output.ui_enabled ? "🔴" : "⚪"} UI enabled`,
+          text: `${cfg.output.ui_enabled ? "🟢" : "⚪"} UI enabled`,
           callback_data: `action:settings:set:output.ui_enabled:${!cfg.output.ui_enabled}`,
         },
       ],
       [
         {
-          text: `${cfg.output.git_init ? "🔴" : "⚪"} Git init`,
+          text: `${cfg.output.git_init ? "🟢" : "⚪"} Git init`,
           callback_data: `action:settings:set:output.git_init:${!cfg.output.git_init}`,
         },
       ],
-      [{ text: "⬅ Back", callback_data: "nav:/settings" }],
+      [{ text: "⬅️ Back", callback_data: "nav:/settings" }],
     ];
   },
 };

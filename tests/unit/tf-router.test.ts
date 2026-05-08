@@ -1,4 +1,7 @@
 import { describe, expect, test } from "bun:test";
+import { registerArchitectActions } from "../../src/interface/telegram/architect/actions.ts";
+import type { ArchitectRunner } from "../../src/interface/telegram/architect/runner.ts";
+import { InputFlowEngine } from "../../src/interface/telegram/engine/flow/engine.ts";
 import { PageRegistry } from "../../src/interface/telegram/engine/registry.ts";
 import { MenuRenderer } from "../../src/interface/telegram/engine/renderer/menu-renderer.ts";
 import { goBack } from "../../src/interface/telegram/engine/router/back.ts";
@@ -10,7 +13,9 @@ import {
   type Ctx,
   DopellerError,
   type PageDefinition,
+  type ServicesShape,
 } from "../../src/interface/telegram/engine/types.ts";
+import { FakeBot } from "../fixtures/fake-grammy.ts";
 import { StubBotApi } from "../fixtures/stub-bot-api.ts";
 
 /**
@@ -101,5 +106,79 @@ describe("resolveStart", () => {
     session.projectRoot = "/repo";
     expect(resolveStart("project_demo", session)).toBe("/project/demo");
     expect(resolveStart(undefined, session)).toBe("/");
+  });
+});
+
+describe("nav-cancels-flow middleware", () => {
+  test("navigateTo cancels an active input flow", async () => {
+    // Build the engine pieces directly (no TeleFocus.attach) so the
+    // test owns its own registry/store/flow and can drive a known
+    // session shape into the architect-level middleware.
+    const store = new MemorySessionStore();
+    const registry = new PageRegistry();
+    registry.register({
+      path: "/",
+      parent: null,
+      render: () => ({ text: "body:/" }),
+      keyboard: () => [],
+    });
+    const renderer = new MenuRenderer(store, registry);
+    const flow = new InputFlowEngine({ registry, renderer, store });
+    const services: ServicesShape = {};
+    // The runner is unused on the nav-cancel path; a typed shell keeps
+    // the deps shape honest without dragging in the real architect
+    // orchestrator.
+    const runner: ArchitectRunner = {
+      loadCurrent: async () => null,
+      newProject: async () => {
+        throw new Error("unused in nav-cancel test");
+      },
+      advance: async () => {
+        throw new Error("unused in nav-cancel test");
+      },
+      resolveApproval: async () => {
+        throw new Error("unused in nav-cancel test");
+      },
+      pendingGate: () => null,
+    };
+
+    const bot = new FakeBot();
+    registerArchitectActions(bot.asBot(), {
+      runner,
+      renderer,
+      registry,
+      store,
+      flow,
+      services,
+    });
+
+    // Pre-stage a session whose input flow is active. The nav middleware
+    // MUST observe `inputFlow.active === true` and clear it before the
+    // navigation chain runs.
+    const origin = { from: { id: 7 }, chat: { id: 4242 } };
+    const session = await store.load(origin.from.id, origin.chat.id);
+    session.inputFlow = {
+      active: true,
+      pagePath: "/",
+      flowId: "test_flow",
+      currentStep: 0,
+      totalSteps: 1,
+      collectedData: {},
+      promptMessageId: null,
+      progressMessageId: null,
+      awaitingInput: true,
+      inputType: "text",
+      validationRules: { type: "text", min: 0, max: 1, errorMessage: "" },
+      retries: 0,
+    };
+    await store.save(session);
+
+    // Inject a manual nav callback. The FakeBot dispatches the first
+    // matching `bot.callbackQuery(...)` registration, which is our
+    // nav-cancel middleware.
+    await bot.inject({ callbackQuery: { data: "nav:/somewhere" } }, origin);
+
+    const after = await store.load(origin.from.id, origin.chat.id);
+    expect(after.inputFlow.active).toBe(false);
   });
 });

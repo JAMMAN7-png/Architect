@@ -155,6 +155,22 @@ telefocus.replace.hit_rate = hit / (hit + miss)
 
 Target: 0.3–0.7 across the bot fleet.
 
+## /start tear-down
+
+`/start` requires a fresh menu at chat bottom regardless of where the
+user was. The renderer exposes `MenuRenderer.forceFresh(ctx)` for
+exactly this:
+
+- Deletes the currently tracked menu (`session.menu.messageId`) via the API.
+- Clears the renderer's idempotency cache for `(bot, user, chat)` so the next render is unconditional.
+- Resets `session.menu.messageId` to `null`; the next `renderMenu` call will `sendMessage` (not edit), placing the menu at the bottom of the chat.
+
+The `/start` command handler invokes `forceFresh` after cancelling any
+active flow and dismissing any active modal — see
+[design-system/03-menu.md](../design-system/03-menu.md) §/start
+protocol. `forceFresh` is the **only** sanctioned way to evict the
+menu; handlers MUST NOT delete the menu message directly.
+
 ## Cross-links
 
 - Blueprint: [04-replace-previous](../blueprint/05-wave-2-core-engines/telefocus-engine/04-replace-previous.md)

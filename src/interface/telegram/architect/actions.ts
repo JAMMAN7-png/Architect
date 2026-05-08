@@ -8,10 +8,13 @@ import {
   type PageRegistry,
   type ServicesShape,
   type SessionStore,
+  dismissModalsInScope,
+  goBack,
   modal,
   navigateTo,
   toast,
 } from "../engine/index.ts";
+import { dismissActiveModal } from "../engine/messages/modal.ts";
 import { adaptUpdate } from "../grammy-adapter.ts";
 import type { ArchitectRunner } from "./runner.ts";
 
@@ -83,6 +86,45 @@ export interface ActionDeps {
  * filtered handlers first.
  */
 export function registerArchitectActions(bot: Bot, deps: ActionDeps): void {
+  // Nav-cancels-flow handler. Matches every `nav:*` callback; if a flow
+  // is active, cancels it before driving the navigation so the user is
+  // freed from the locked-input holding body when they tap a Back/menu
+  // button. We drive the navigation here (mirroring
+  // `engine/middleware/router.ts`) instead of calling `next()` so the
+  // chain is self-contained — the engine pipeline's nav matcher would
+  // otherwise re-handle the same callback redundantly, and tightening
+  // the contract to "this handler owns nav:*" removes the ordering
+  // hazard between the architect actions and the engine `bot.use(...)`.
+  bot.callbackQuery(/^nav:.+$/, async (gctx) => {
+    const ctx = await loadCtx(gctx, deps);
+    if (ctx === null) {
+      await silenceSpinner(gctx);
+      return;
+    }
+    try {
+      if (ctx.session.inputFlow.active) {
+        try {
+          await deps.flow.cancel(ctx);
+        } catch {
+          // Cancelling an inert/inconsistent flow is forgivable — never
+          // block the user-initiated navigation on cleanup failure.
+        }
+        await deps.store.save(ctx.session);
+      }
+      const data = gctx.callbackQuery?.data ?? "";
+      const nd = navDeps(deps);
+      if (data === "nav:back") {
+        await goBack(ctx, nd);
+      } else if (data.startsWith("nav:")) {
+        await navigateTo(ctx, data.slice("nav:".length), nd);
+      }
+    } catch (err) {
+      await reportFailure(ctx, err);
+    } finally {
+      await silenceSpinner(gctx);
+    }
+  });
+
   for (const [callback, status] of Object.entries(APPROVAL_CALLBACKS)) {
     bot.callbackQuery(callback, makeApprovalHandler(deps, status));
   }
@@ -92,6 +134,8 @@ export function registerArchitectActions(bot: Bot, deps: ActionDeps): void {
   bot.callbackQuery("action:architect:reset", makeResetHandler(deps));
   bot.callbackQuery(RESET_CONFIRM, makeResetConfirmHandler(deps));
   bot.callbackQuery(RESET_CANCEL, makeResetCancelHandler(deps));
+  bot.callbackQuery("action:engine:flow:cancel", makeEngineFlowCancelHandler(deps));
+  bot.callbackQuery("action:engine:modal:cancel", makeEngineModalCancelHandler(deps));
 }
 
 // ── Approval handlers ────────────────────────────────────────────────
@@ -270,6 +314,83 @@ function makeResetCancelHandler(deps: ActionDeps): (grammyCtx: GrammyContext) =>
       return;
     }
     try {
+      // Tear down the reset confirmation modal hosted on the current page
+      // BEFORE rerender, so the renderer no longer sees `activeModal`
+      // and paints the live menu instead of the locked holding body.
+      // Both calls are idempotent — failures are forgivable per
+      // design-system §07.
+      try {
+        await dismissModalsInScope(ctx, ctx.session.menu.currentPage);
+      } catch {
+        // Telegram delete races are benign; activeModal still gets
+        // cleared below regardless.
+      }
+      dismissActiveModal(ctx.session);
+      await deps.renderer.rerender(ctx);
+      await deps.store.save(ctx.session);
+    } catch (err) {
+      await reportFailure(ctx, err);
+    } finally {
+      await silenceSpinner(grammyCtx);
+    }
+  };
+}
+
+// ── Engine-level cancel handlers ─────────────────────────────────────
+//
+// `action:engine:flow:cancel` and `action:engine:modal:cancel` are
+// emitted by the renderer's locked-body Cancel button (see
+// `engine/renderer/menu-renderer.ts`). They are user-initiated and
+// idempotent: tapping Cancel on an already-inert state is a no-op.
+
+function makeEngineFlowCancelHandler(
+  deps: ActionDeps,
+): (grammyCtx: GrammyContext) => Promise<void> {
+  return async (grammyCtx) => {
+    const ctx = await loadCtx(grammyCtx, deps);
+    if (ctx === null) {
+      await silenceSpinner(grammyCtx);
+      return;
+    }
+    try {
+      if (ctx.session.inputFlow.active) {
+        try {
+          await deps.flow.cancel(ctx);
+        } catch {
+          // Forgivable: the user's intent is to escape the lock; never
+          // strand them in a half-cancelled state on cleanup failure.
+        }
+      }
+      await toast.info(ctx, "Cancelled.");
+      await deps.renderer.rerender(ctx);
+      await deps.store.save(ctx.session);
+    } catch (err) {
+      await reportFailure(ctx, err);
+    } finally {
+      await silenceSpinner(grammyCtx);
+    }
+  };
+}
+
+function makeEngineModalCancelHandler(
+  deps: ActionDeps,
+): (grammyCtx: GrammyContext) => Promise<void> {
+  return async (grammyCtx) => {
+    const ctx = await loadCtx(grammyCtx, deps);
+    if (ctx === null) {
+      await silenceSpinner(grammyCtx);
+      return;
+    }
+    try {
+      const scope = ctx.session.activeModal?.scope;
+      try {
+        await dismissModalsInScope(ctx, scope);
+      } catch {
+        // Telegram delete races are benign; the activeModal is still
+        // cleared below so the lock is released regardless.
+      }
+      dismissActiveModal(ctx.session);
+      await toast.info(ctx, "Dismissed.");
       await deps.renderer.rerender(ctx);
       await deps.store.save(ctx.session);
     } catch (err) {

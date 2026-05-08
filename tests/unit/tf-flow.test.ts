@@ -99,20 +99,45 @@ describe("InputFlowEngine.capture", () => {
     expect(h.api.calls("editMessageText").length).toBeGreaterThanOrEqual(1);
   });
 
-  test("four invalid inputs cancel the flow and surface a DANGER toast", async () => {
+  test("four invalid captures keep the flow active and re-render the prompt with errorMessage prefixed", async () => {
     const h = await makeHarness();
     await h.engine.start("demo", h.ctx);
+    const editsBefore = h.api.calls("editMessageText").length;
     for (let i = 0; i < 4; i += 1) {
       h.ctx.message = { text: "x", message_id: 600 + i };
-      await h.engine.capture(h.ctx);
+      const outcome = await h.engine.capture(h.ctx);
+      expect(outcome).toBe("rejected");
     }
-    expect(h.ctx.session.inputFlow.active).toBe(false);
+    // Flow stays active and still on step 0.
+    expect(h.ctx.session.inputFlow.active).toBe(true);
+    expect(h.ctx.session.inputFlow.currentStep).toBe(0);
+    expect(h.ctx.session.inputFlow.awaitingInput).toBe(true);
+    expect(h.ctx.session.inputFlow.retries).toBe(0);
+
+    // Each rejection edits the prompt message in place with the validator's
+    // errorMessage prefixed before the prompt body.
+    const promptEdits = h.api
+      .calls("editMessageText")
+      .filter((c) => typeof c.args[2] === "string" && (c.args[2] as string).includes("Name?"));
+    expect(promptEdits.length).toBeGreaterThanOrEqual(4);
+    const lastText = promptEdits.at(-1)?.args[2] as string;
+    expect(lastText.startsWith("len")).toBe(true);
+    expect(lastText).toContain("Name?");
+
+    // The user's invalid replies are deleted forgivingly.
+    const deleted = h.api.calls("deleteMessage").map((c) => c.args[1]);
+    for (let i = 0; i < 4; i += 1) expect(deleted).toContain(600 + i);
+
+    // No DANGER toast (icon "❌") is sent — feedback lives inline.
     const dangerSent = h.api.history.some(
       (c) =>
         c.method === "sendMessage" &&
         typeof c.args[1] === "string" &&
         (c.args[1] as string).startsWith("❌"),
     );
-    expect(dangerSent).toBe(true);
+    expect(dangerSent).toBe(false);
+
+    // We genuinely added more edits past the initial prompt send.
+    expect(h.api.calls("editMessageText").length).toBeGreaterThan(editsBefore);
   });
 });

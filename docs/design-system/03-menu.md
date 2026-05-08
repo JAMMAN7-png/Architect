@@ -10,6 +10,54 @@
 
 ---
 
+## Menu reflects state (golden rule)
+
+Every outbound message — toast, modal, input prompt — MUST be reflected
+in the main menu. The menu renderer paints a **locked body** with a
+single `× Cancel` button whenever `session.inputFlow.active === true` or
+`session.activeModal !== null`. The page's normal keyboard is NOT shown
+while a flow or modal is in flight; the page is non-interactable until
+the flow completes or the modal resolves.
+
+- Locked-body branch lives in `src/interface/telegram/engine/renderer/menu-renderer.ts`.
+- Modal lock state: see [07-toasts-modals.md](07-toasts-modals.md) §Modals lock the menu.
+- Cardinal rule summary: [12-golden-rules.md](12-golden-rules.md) §1.
+
+## /start protocol
+
+Every `/start` MUST tear down ambient UI before navigating:
+
+1. Cancel any active input flow (`engine.cancel(ctx)`).
+2. Dismiss any active modal (clear `session.activeModal`, delete the modal message).
+3. `MenuRenderer.forceFresh(ctx)` — deletes the tracked menu and clears the renderer's idempotency cache.
+4. Delete the user's `/start` message (best-effort).
+5. Call `navigateTo(ctx, start_target)` to render a fresh menu at chat bottom.
+
+The result: a clean, freshly-rendered menu at the bottom of the chat,
+regardless of where the user was before.
+
+## Button palette
+
+Every interactive button has a leading emoji from the canonical palette.
+Colour discipline is enforced by the lint rule on button configs.
+
+| Intent | Leading emoji | Example label |
+|---|---|---|
+| Enabled / on / selected (multi-pick) | 🟢 | `🟢 Notifications` |
+| Approve / save / success | 🟢 ✅ | `✅ Save`, `🟢 Confirm` |
+| Disabled / off | ⚪ | `⚪ Notifications` |
+| Current selection (single-pick) | ⭐ | `⭐ Casual` |
+| Non-selected single-pick row | ▫ | `▫ Formal` |
+| Continue / resume / forward | 🟡 ▶ | `🟡 ▶ Continue` |
+| Revise | 🟡 🔁 | `🟡 🔁 Revise` |
+| Destructive (reset / delete / reject) | 🛑 | `🛑 Reset` |
+| Delete | 🗑 | `🗑 Delete agent` |
+| Edit | ✏ | `✏ Edit name` |
+| Back / cancel | ⬅️ | `⬅️ Back` |
+| Dismiss | ✕ | `✕ Cancel` |
+
+🔴 is reserved for destructive **state** indicators (e.g. "🔴 Bot suspended"); it MUST NOT be used as an "enabled" prefix — use 🟢 for that.
+
 ## Invariant
 
 Exactly **one** Menu Message per (bot, user) chat. Its `messageId` lives

@@ -52,7 +52,7 @@ export const settingsBrainstormPage: PageDefinition = {
           callback_data: "action:settings:edit:brainstorm.cache_ttl",
         },
       ],
-      [{ text: "⬅ Back", callback_data: "nav:/settings" }],
+      [{ text: "⬅️ Back", callback_data: "nav:/settings" }],
     ];
   },
   inputFlow: makeScalarEditorFlow(PAGE_PATH, FLOW_ID),

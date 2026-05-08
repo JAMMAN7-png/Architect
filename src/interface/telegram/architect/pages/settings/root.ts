@@ -47,7 +47,7 @@ export const settingsRootPage: PageDefinition = {
         { text: "💡 Brainstorm", callback_data: "nav:/settings/brainstorm" },
         { text: "📦 Output", callback_data: "nav:/settings/output" },
       ],
-      [{ text: "⬅ Back", callback_data: "nav:/" }],
+      [{ text: "⬅️ Back", callback_data: "nav:/" }],
     ];
   },
 };

@@ -78,6 +78,14 @@ export const UserSessionSchema = z
     messages: z.record(z.array(TrackedMessageSchema)),
     inputFlow: InputFlowStateSchema,
     navigationGuard: NavigationGuardSchema,
+    activeModal: z
+      .object({
+        scope: z.string(),
+        messageId: z.number(),
+        title: z.string(),
+      })
+      .strict()
+      .nullable(),
     pageData: z.record(z.record(z.unknown())),
     createdAt: z.number(),
     lastInteractionAt: z.number(),
@@ -125,6 +133,7 @@ export function freshSession(input: {
       pendingDestination: null,
       confirmationMessageId: null,
     },
+    activeModal: null,
     pageData: {},
     createdAt: input.now,
     lastInteractionAt: input.now,

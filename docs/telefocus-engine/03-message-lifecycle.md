@@ -76,6 +76,19 @@ export class MessageLifecycleManager {
 const DEFAULT_TOAST_TTL = { INFO: 5, SUCCESS: 3, WARNING: 6, DANGER: 8 } as const;
 ```
 
+## TTL eviction
+
+Every tracked message with `expiresAt` is auto-evicted by the engine.
+The contract is the same one the design-system advertises (see
+[design-system/04-messages.md](../design-system/04-messages.md) §TTL
+discipline and [design-system/12-golden-rules.md](../design-system/12-golden-rules.md) §2):
+
+- `MessageLifecycleManager.send()` schedules `setTimeout(deleteMessage, expiresAt - now)` for any tracked message that carries `expiresAt`.
+- A module-level `Map<chatId:messageId, Timeout>` ensures **one timer per `(chatId, messageId)`**. Re-sending or replacing reschedules; it never doubles up.
+- `cancelTtlTimer(chatId, messageId)` is the test/runtime hatch to revoke a timer (e.g. promoting an INFO into a permanent banner). Production code MUST NOT touch the `Map` directly.
+- After deletion, the tracked-message entry is removed from `session.messages[pagePath]` and `sessionDirty` is set so the eviction survives a crash.
+- Replacing an existing tracked message via `replacePrevious` cancels the old timer and reschedules to the new TTL.
+
 ## TTL scheduler
 
 Both active and lazy strategies, as mandated by the blueprint.
@@ -207,3 +220,4 @@ See the blueprint chapter for the user-message timing trace. At the implementati
 
 - Blueprint: [03-message-lifecycle](../blueprint/05-wave-2-core-engines/telefocus-engine/03-message-lifecycle.md)
 - Sibling: [04-replace-previous.md](04-replace-previous.md) · [05-middleware-pipeline.md](05-middleware-pipeline.md)
+

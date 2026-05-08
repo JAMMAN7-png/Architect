@@ -1,4 +1,4 @@
-import { SEARCH_PROVIDERS, makeSettingsService } from "../../../../../config/service.ts";
+import { makeSettingsService } from "../../../../../config/service.ts";
 import {
   type Ctx,
   type InlineKeyboardButton,
@@ -6,7 +6,8 @@ import {
   type PageDefinition,
   escapeHtml,
 } from "../../../engine/index.ts";
-import { makeScalarEditorFlow } from "../../settings-actions.ts";
+import { indexedSettingsCallback } from "../../../engine/router/callback.ts";
+import { makeScalarEditorFlow, settingsCandidates } from "../../settings-actions.ts";
 
 const PAGE_PATH = "/settings/search";
 const FLOW_ID = "settings_search_edit";
@@ -15,6 +16,12 @@ const FLOW_ID = "settings_search_edit";
  * `/settings/search` — toggle enabled providers, pick the primary, and
  * edit scalar values (noise filter, per-query cap, base URL) through the
  * page's input flow.
+ *
+ * Toggle and primary rows emit indexed callbacks (`…:idx:<n>`) so
+ * `callback_data` stays under Telegram's 64-byte cap; the action handler
+ * resolves the index back via {@link settingsCandidates}. The scalar
+ * editors stay on the literal `action:settings:edit:<key>` form
+ * (already <64 bytes).
  */
 export const settingsSearchPage: PageDefinition = {
   path: PAGE_PATH,
@@ -36,21 +43,28 @@ export const settingsSearchPage: PageDefinition = {
   async keyboard(_ctx: Ctx): Promise<InlineKeyboardButton[][]> {
     const svc = makeSettingsService();
     const cfg = await svc.load();
-    const enabled = new Set(cfg.search.enabled_providers);
+    const enabled = new Set<string>(cfg.search.enabled_providers);
+    const toggleProviders = settingsCandidates("search.enabled_providers");
+    const primaryProviders = settingsCandidates("search.provider");
     const rows: InlineKeyboardButton[][] = [];
-    for (const id of SEARCH_PROVIDERS) {
-      const icon = enabled.has(id) ? "🔴" : "⚪";
+    for (let i = 0; i < toggleProviders.length; i++) {
+      const id = toggleProviders[i] ?? "";
+      const icon = enabled.has(id) ? "🟢" : "⚪";
       rows.push([
         {
           text: `${icon} ${id}`,
-          callback_data: `action:settings:toggle:search.enabled_providers:${id}`,
+          callback_data: indexedSettingsCallback("toggle", "search.enabled_providers", i),
         },
       ]);
     }
-    const primaryRow: InlineKeyboardButton[] = SEARCH_PROVIDERS.map((id) => ({
-      text: `${id === cfg.search.provider ? "⭐" : "·"} ${id}`,
-      callback_data: `action:settings:set:search.provider:${id}`,
-    }));
+    const primaryRow: InlineKeyboardButton[] = [];
+    for (let i = 0; i < primaryProviders.length; i++) {
+      const id = primaryProviders[i] ?? "";
+      primaryRow.push({
+        text: `${id === cfg.search.provider ? "⭐" : "▫"} ${id}`,
+        callback_data: indexedSettingsCallback("set", "search.provider", i),
+      });
+    }
     rows.push(primaryRow);
     rows.push([
       {
@@ -70,7 +84,7 @@ export const settingsSearchPage: PageDefinition = {
         callback_data: "action:settings:edit:search.base_url",
       },
     ]);
-    rows.push([{ text: "⬅ Back", callback_data: "nav:/settings" }]);
+    rows.push([{ text: "⬅️ Back", callback_data: "nav:/settings" }]);
     return rows;
   },
   inputFlow: makeScalarEditorFlow(PAGE_PATH, FLOW_ID),

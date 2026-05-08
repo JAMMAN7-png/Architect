@@ -91,6 +91,15 @@ export interface UserSession {
     confirmationMessageId: number | null;
   };
 
+  /**
+   * Currently open modal, if any. Set by `modal.confirm`, cleared by
+   * `dismissActiveModal` (and indirectly by `dismissModalsInScope` when
+   * it removes the hosting scope). Drives the renderer's lock state:
+   * while non-null the menu shows a "modal open" body with a single
+   * Cancel button.
+   */
+  activeModal: { scope: string; messageId: number; title: string } | null;
+
   /** Per-page scratch data; keyed by page path. Ephemeral by policy. */
   pageData: Record<string, Record<string, unknown>>;
 
@@ -149,6 +158,11 @@ export interface InputFlowDefinition {
   steps: InputFlowStep[];
   onComplete(collected: Record<string, unknown>, ctx: Ctx): Promise<void>;
   onCancel?(collected: Record<string, unknown>, ctx: Ctx): Promise<void>;
+  /**
+   * @deprecated Advisory only — retained on the type for backwards
+   * compatibility. Validation failures no longer auto-cancel the flow;
+   * the engine edits the prompt in place and keeps awaiting input.
+   */
   maxRetries?: number;
 }
 

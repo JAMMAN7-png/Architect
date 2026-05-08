@@ -148,9 +148,9 @@ onEnter(page) detects inputFlow → engine.start(flowId)
 user reply arrives ─── captured by input-capture middleware
        │
        ▼
- validate(raw)  ── fail → DANGER toast, keep prompt alive, retries++
- validate(parsed) ─ fail → DANGER toast, keep prompt alive, retries++
- retries > maxRetries → engine.cancel()
+ validate(raw)  ── fail → edit prompt with errorMessage,
+                         delete user reply, STAY active
+ validate(parsed) ─ fail → same: edit prompt + delete reply, STAY
        │
        ▼
  collectedData[step.field] = parsed
@@ -218,14 +218,39 @@ router decides:
 - Otherwise → WARNING ephemeral *"I'm not expecting input here."*, no
   effect on session.
 
-## Error recovery
+## Validation never closes the flow
+
+Validation errors do **not** cancel the flow. The engine edits the
+existing prompt in place to prepend the validator's `errorMessage`,
+then keeps `session.inputFlow.active === true` and waits for another
+reply.
+
+- The user's invalid reply is deleted best-effort by the input-flow engine after each capture (success or failure).
+- The prompt edit looks like: `errorMessage + "\n\n" + step.prompt`.
+- The only paths that clear `session.inputFlow.active`:
+  - explicit user cancel via `action:engine:flow:cancel`
+  - any `nav:*` callback (mid-flow navigation cancels first, navigates second)
+  - `/start` tear-down
+  - successful `onComplete`
+- `maxRetries` is now **advisory metadata** only; the engine does NOT auto-cancel on retry exhaustion. Pages that want a hard ceiling MUST implement it inside their validator.
 
 | Scenario | Policy |
 |---|---|
-| Validation fails 3× | `onCancel` + toast `"Let's try later."`, nav to parent. |
-| User replies too late (wrong step) | WARNING toast, re-send current prompt. |
+| Validator rejects input | Edit prompt with `errorMessage`, delete user reply, stay active. |
+| User replies too late (wrong step) | WARNING toast, re-render current prompt. |
 | Engine restart mid-flow | Session survives; `engine.resume(ctx)` on next update re-renders the current step. |
 | TTL on prompt expires (> 24 h) | Session itself expires; user restarts fresh on return. |
+
+## Prompt lives in the menu
+
+The renderer's locked-body branch surfaces the active prompt **inside the
+menu message itself**. Pages MUST NOT send a separate ephemeral as the
+prompt — they declare an `inputFlow` and let the engine render the
+prompt inline by editing the menu.
+
+- New prompts: edit the existing menu, do not send a new message.
+- Cancel button on the locked menu calls `action:engine:flow:cancel`.
+- See [03-menu.md](03-menu.md) §Menu reflects state for the lock contract.
 
 ## Soul Quiz integration
 

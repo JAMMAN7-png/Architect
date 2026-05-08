@@ -28,6 +28,7 @@ Creator Studio) consumes this API.
 | 09 | [developer-api](09-developer-api.md) | Pages, actions, commands, services |
 | 10 | [middleware](10-middleware.md) | Ordered update pipeline |
 | 11 | [file-structure](11-file-structure.md) | Monorepo layout, conventions |
+| 12 | [golden-rules](12-golden-rules.md) | Four cardinal rules: menu reflects state, ephemerals vanish, errors inline, callback_data ≤ 64 bytes |
 
 ## Reading order
 

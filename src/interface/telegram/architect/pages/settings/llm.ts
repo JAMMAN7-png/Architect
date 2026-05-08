@@ -1,4 +1,4 @@
-import { LLM_PROVIDERS, makeSettingsService } from "../../../../../config/service.ts";
+import { makeSettingsService } from "../../../../../config/service.ts";
 import {
   type Ctx,
   type InlineKeyboardButton,
@@ -6,11 +6,17 @@ import {
   type PageDefinition,
   escapeHtml,
 } from "../../../engine/index.ts";
+import { indexedSettingsCallback } from "../../../engine/router/callback.ts";
+import { settingsCandidates } from "../../settings-actions.ts";
 
 /**
  * `/settings/llm` — toggle which LLM provider classes the router may
  * construct. The service enforces `min: 1`; attempts to disable the
  * last enabled provider surface a danger toast from the action handler.
+ *
+ * Toggle rows emit indexed callbacks (`…:idx:<n>`) so `callback_data`
+ * stays under Telegram's 64-byte cap; the action handler resolves the
+ * index back via {@link settingsCandidates}.
  */
 export const settingsLlmPage: PageDefinition = {
   path: "/settings/llm",
@@ -30,18 +36,20 @@ export const settingsLlmPage: PageDefinition = {
   async keyboard(_ctx: Ctx): Promise<InlineKeyboardButton[][]> {
     const svc = makeSettingsService();
     const cfg = await svc.load();
-    const enabled = new Set(cfg.llm.enabled_providers);
+    const enabled = new Set<string>(cfg.llm.enabled_providers);
+    const providers = settingsCandidates("llm.enabled_providers");
     const rows: InlineKeyboardButton[][] = [];
-    for (const id of LLM_PROVIDERS) {
-      const icon = enabled.has(id) ? "🔴" : "⚪";
+    for (let i = 0; i < providers.length; i++) {
+      const id = providers[i] ?? "";
+      const icon = enabled.has(id) ? "🟢" : "⚪";
       rows.push([
         {
           text: `${icon} ${id}`,
-          callback_data: `action:settings:toggle:llm.enabled_providers:${id}`,
+          callback_data: indexedSettingsCallback("toggle", "llm.enabled_providers", i),
         },
       ]);
     }
-    rows.push([{ text: "⬅ Back", callback_data: "nav:/settings" }]);
+    rows.push([{ text: "⬅️ Back", callback_data: "nav:/settings" }]);
     return rows;
   },
 };

@@ -76,3 +76,75 @@ describe("MenuRenderer.renderMenu", () => {
     expect(ctx.session.menu.messageId).toBe(101);
   });
 });
+
+describe("MenuRenderer lock state", () => {
+  test("when session.inputFlow.active is true, renderer emits a locked body and one Cancel button", async () => {
+    const api = new StubBotApi();
+    const ctx = await makeCtx(api);
+    ctx.session.inputFlow.active = true;
+    ctx.session.inputFlow.awaitingInput = true;
+    ctx.session.inputFlow.pagePath = "/a";
+    ctx.session.menu.currentPage = "/a";
+
+    const renderer = new MenuRenderer(new MemorySessionStore(), buildRegistry());
+    await renderer.renderMenu(ctx, mkPage("/a", "A-page-body"));
+
+    const sent = api.last("sendMessage");
+    expect(sent).toBeDefined();
+    const text = sent?.[1] as string;
+    expect(text).not.toContain("A-page-body");
+    expect(text).toContain("Waiting for your input");
+
+    const opts = sent?.[2] as { reply_markup?: { inline_keyboard: unknown[][] } };
+    const keyboard = opts?.reply_markup?.inline_keyboard ?? [];
+    expect(keyboard).toHaveLength(1);
+    expect(keyboard[0]).toHaveLength(1);
+    const btn = keyboard[0]?.[0] as { text: string; callback_data: string };
+    expect(btn.text).toBe("× Cancel");
+    expect(btn.callback_data).toBe("action:engine:flow:cancel");
+  });
+
+  test("when session.activeModal is set, renderer emits a locked body containing the modal title and exactly one Cancel button", async () => {
+    const api = new StubBotApi();
+    const ctx = await makeCtx(api);
+    ctx.session.activeModal = { scope: "/a", messageId: 999, title: "Confirm thing" };
+    ctx.session.menu.currentPage = "/a";
+
+    const renderer = new MenuRenderer(new MemorySessionStore(), buildRegistry());
+    await renderer.renderMenu(ctx, mkPage("/a", "A-page-body"));
+
+    const sent = api.last("sendMessage");
+    expect(sent).toBeDefined();
+    const text = sent?.[1] as string;
+    expect(text).not.toContain("A-page-body");
+    expect(text).toContain("Confirm thing");
+    expect(text).toContain("Resolve it");
+
+    const opts = sent?.[2] as { reply_markup?: { inline_keyboard: unknown[][] } };
+    const keyboard = opts?.reply_markup?.inline_keyboard ?? [];
+    expect(keyboard).toHaveLength(1);
+    expect(keyboard[0]).toHaveLength(1);
+    const btn = keyboard[0]?.[0] as { text: string; callback_data: string };
+    expect(btn.text).toBe("× Cancel");
+    expect(btn.callback_data).toBe("action:engine:modal:cancel");
+  });
+
+  test("modal lock strictly preempts input-flow lock when both are set", async () => {
+    const api = new StubBotApi();
+    const ctx = await makeCtx(api);
+    ctx.session.inputFlow.active = true;
+    ctx.session.inputFlow.awaitingInput = true;
+    ctx.session.activeModal = { scope: "/a", messageId: 999, title: "Modal Wins" };
+    ctx.session.menu.currentPage = "/a";
+
+    const renderer = new MenuRenderer(new MemorySessionStore(), buildRegistry());
+    await renderer.renderMenu(ctx, mkPage("/a", "ignored"));
+
+    const sent = api.last("sendMessage");
+    const text = sent?.[1] as string;
+    expect(text).toContain("Modal Wins");
+    const opts = sent?.[2] as { reply_markup?: { inline_keyboard: unknown[][] } };
+    const btn = opts?.reply_markup?.inline_keyboard?.[0]?.[0] as { callback_data: string };
+    expect(btn.callback_data).toBe("action:engine:modal:cancel");
+  });
+});

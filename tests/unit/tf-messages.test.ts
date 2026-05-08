@@ -1,6 +1,14 @@
 import { describe, expect, test } from "bun:test";
-import { modal } from "../../src/interface/telegram/engine/messages/modal.ts";
-import { send } from "../../src/interface/telegram/engine/messages/send.ts";
+import {
+  dismissActiveModal,
+  dismissModalsInScope,
+  modal,
+} from "../../src/interface/telegram/engine/messages/modal.ts";
+import {
+  __setTtlDeleterForTests,
+  cancelTtlTimer,
+  send,
+} from "../../src/interface/telegram/engine/messages/send.ts";
 import { toast } from "../../src/interface/telegram/engine/messages/toast.ts";
 import {
   cleanupScope,
@@ -191,5 +199,141 @@ describe("modal.confirm", () => {
     expect(list.length).toBe(1);
     expect(list[0]?.type).toBe("INTERACTIVE");
     expect(list[0]?.subtype).toBe("CONFIRMATION");
+  });
+});
+
+describe("send TTL eviction", () => {
+  test("auto-deletes ephemeral and untracks once ttl elapses", async () => {
+    const api = new StubBotApi();
+    const ctx = await makeCtx(api);
+
+    const tracked = await send(ctx, "fading", {
+      type: "EPHEMERAL",
+      subtype: "INFO",
+      ttlMs: 50,
+    });
+    expect(ctx.session.messages["/"]?.length).toBe(1);
+
+    await new Promise((r) => setTimeout(r, 90));
+
+    const deletes = api.calls("deleteMessage");
+    expect(deletes.length).toBe(1);
+    expect(deletes[0]?.args[1]).toBe(tracked.messageId);
+    expect(ctx.session.messages["/"]).toBeUndefined();
+  });
+
+  test("replacing edit reschedules the timer to the shorter ttl", async () => {
+    const api = new StubBotApi();
+    const ctx = await makeCtx(api);
+
+    await send(ctx, "long", {
+      type: "EPHEMERAL",
+      subtype: "INFO",
+      ttlMs: 200,
+    });
+    await send(ctx, "short", {
+      type: "EPHEMERAL",
+      subtype: "INFO",
+      ttlMs: 50,
+    });
+
+    // The second send must edit the first in place, not create a new
+    // message; a single deleteMessage at the 50 ms cut-off proves the
+    // timer was rescheduled rather than left at 200 ms.
+    expect(api.calls("editMessageText").length).toBe(1);
+    expect(api.calls("sendMessage").length).toBe(1);
+
+    await new Promise((r) => setTimeout(r, 90));
+
+    const deletes = api.calls("deleteMessage");
+    expect(deletes.length).toBe(1);
+    expect(deletes[0]?.args[1]).toBe(100);
+    expect(ctx.session.messages["/"]).toBeUndefined();
+  });
+
+  test("no timer is scheduled when expiresAt is absent", async () => {
+    const api = new StubBotApi();
+    const ctx = await makeCtx(api);
+
+    const tracked = await send(ctx, "stays put", {
+      type: "INTERACTIVE",
+      subtype: "CONFIRMATION",
+    });
+    expect(tracked.expiresAt).toBeUndefined();
+
+    await new Promise((r) => setTimeout(r, 100));
+
+    expect(api.calls("deleteMessage").length).toBe(0);
+    expect(ctx.session.messages["/"]?.length).toBe(1);
+
+    // Belt-and-braces: the timer map should not hold a stale entry.
+    cancelTtlTimer(ctx.chatId, tracked.messageId);
+    // Restoring the default deleter is a no-op here but documents the
+    // test seam exists for future tests that swap it in.
+    __setTtlDeleterForTests(null);
+  });
+});
+
+describe("modal.confirm + activeModal", () => {
+  test("modal.confirm sets session.activeModal; dismissModalsInScope clears it when it dismisses that scope", async () => {
+    const api = new StubBotApi();
+    const ctx = await makeCtx(api);
+
+    expect(ctx.session.activeModal).toBeNull();
+
+    const tracked = await modal.confirm(ctx, {
+      title: "Leave?",
+      body: "Unsaved work will be discarded.",
+      confirmLabel: "Yes, leave",
+      confirmCallback: "guard:leave",
+    });
+
+    expect(ctx.session.activeModal).not.toBeNull();
+    expect(ctx.session.activeModal?.scope).toBe("/");
+    expect(ctx.session.activeModal?.messageId).toBe(tracked.messageId);
+    expect(ctx.session.activeModal?.title).toBe("Leave?");
+
+    await dismissModalsInScope(ctx, "/");
+
+    expect(ctx.session.activeModal).toBeNull();
+    // Modal was deleted from chat.
+    expect(api.calls("deleteMessage").map((c) => c.args[1])).toContain(tracked.messageId);
+  });
+
+  test("dismissActiveModal is idempotent", async () => {
+    const api = new StubBotApi();
+    const ctx = await makeCtx(api);
+
+    dismissActiveModal(ctx.session);
+    expect(ctx.session.activeModal).toBeNull();
+
+    await modal.confirm(ctx, {
+      title: "T",
+      body: "B",
+      confirmLabel: "ok",
+      confirmCallback: "x:y",
+    });
+    expect(ctx.session.activeModal).not.toBeNull();
+
+    dismissActiveModal(ctx.session);
+    expect(ctx.session.activeModal).toBeNull();
+  });
+
+  test("dismissModalsInScope on an unrelated scope leaves session.activeModal alone", async () => {
+    const api = new StubBotApi();
+    const ctx = await makeCtx(api);
+
+    await modal.confirm(ctx, {
+      title: "T",
+      body: "B",
+      confirmLabel: "ok",
+      confirmCallback: "x:y",
+      scope: "/a",
+    });
+    const before = ctx.session.activeModal;
+    expect(before).not.toBeNull();
+
+    await dismissModalsInScope(ctx, "/b");
+    expect(ctx.session.activeModal).toEqual(before);
   });
 });

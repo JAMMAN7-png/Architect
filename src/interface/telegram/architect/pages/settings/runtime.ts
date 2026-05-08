@@ -34,7 +34,7 @@ export const settingsRuntimePage: PageDefinition = {
     const svc = makeSettingsService();
     const cfg = await svc.load();
     const logRow: InlineKeyboardButton[] = LOG_LEVELS.map((lvl) => ({
-      text: `${lvl === cfg.runtime.log_level ? "⭐" : "·"} ${lvl}`,
+      text: `${lvl === cfg.runtime.log_level ? "⭐" : "▫"} ${lvl}`,
       callback_data: `action:settings:set:runtime.log_level:${lvl}`,
     }));
     return [
@@ -51,7 +51,7 @@ export const settingsRuntimePage: PageDefinition = {
           callback_data: "action:settings:edit:runtime.max_tokens_default",
         },
       ],
-      [{ text: "⬅ Back", callback_data: "nav:/settings" }],
+      [{ text: "⬅️ Back", callback_data: "nav:/settings" }],
     ];
   },
   inputFlow: makeScalarEditorFlow(PAGE_PATH, FLOW_ID),

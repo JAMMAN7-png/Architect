@@ -192,6 +192,31 @@ User-visible error text **never** contains:
 The logger sink regex-redacts anything matching bot-token / initData
 patterns before shipping logs.
 
+## Validation error UX
+
+Validation errors raised by an input-flow validator are surfaced in the
+**prompt itself**, not as toasts. The flow stays active; the engine
+edits the existing prompt to prepend the validator's `errorMessage`
+and waits for another reply.
+
+- Toasts are reserved for **non-recoverable** platform / internal errors (`provider_all_down`, `tool_timeout`, etc.).
+- The validator's `errorMessage` MUST be self-contained: it states **which field** failed and **what's allowed** (e.g. *"Name must be 2–32 chars; letters, digits, spaces, dashes."*).
+- The user's invalid reply is deleted by the input-flow engine; the prompt is the only surviving artefact for that turn.
+- See [05-input-flows.md](05-input-flows.md) §Validation never closes the flow.
+- See [12-golden-rules.md](12-golden-rules.md) §3.
+
+## Cancel buttons MUST be implemented
+
+Every `cancelCallback` declared on a modal MUST have a registered
+grammY handler that performs the dismissal and rerender. An inert
+cancel button — one whose callback string never resolves to a handler
+— is a bug, not a stub.
+
+- The handler MUST clear `session.activeModal`, dismiss interactive messages in the modal's scope, and rerender the menu (which lifts the locked body).
+- TODO: CI lint rule that walks every `modal.confirm({ cancelCallback })` and verifies a handler is registered for the callback string.
+- Stub cancel handlers (e.g. `() => {}`, or a callback that only acks) are equivalent to no handler at all and MUST be flagged.
+- See [07-toasts-modals.md](07-toasts-modals.md) §Modals lock the menu.
+
 ## Success criteria
 
 - [ ] No uncaught exception ever reaches the Telegram client.

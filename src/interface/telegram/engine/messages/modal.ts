@@ -1,5 +1,5 @@
 import { logger } from "../../../../util/logger.ts";
-import type { Ctx, InlineKeyboardButton, TrackedMessage } from "../types.ts";
+import type { Ctx, InlineKeyboardButton, TrackedMessage, UserSession } from "../types.ts";
 import { escapeHtml } from "./sanitise.ts";
 import { send } from "./send.ts";
 
@@ -27,22 +27,39 @@ export interface ConfirmOptions {
 }
 
 /**
+ * Clear `session.activeModal`. Idempotent. Exposed so action handlers
+ * (e.g. modal cancel/confirm) can release the renderer's lock state
+ * without going through {@link dismissModalsInScope}.
+ */
+export function dismissActiveModal(session: UserSession): void {
+  session.activeModal = null;
+}
+
+/**
  * Delete every `INTERACTIVE` message currently tracked under `scope`
  * (default: current page). Telegram failures are forgiven — modals can
  * race with manual user deletes, and the design treats a failed
- * `deleteMessage` as benign.
+ * `deleteMessage` as benign. If the dismissed scope hosted
+ * `session.activeModal`, that field is cleared too.
  */
 export async function dismissModalsInScope(ctx: Ctx, scope?: string): Promise<void> {
   const target = scope ?? ctx.session.menu.currentPage;
   const list = ctx.session.messages[target];
-  if (!list || list.length === 0) return;
+  if (!list || list.length === 0) {
+    if (ctx.session.activeModal !== null && ctx.session.activeModal.scope === target) {
+      dismissActiveModal(ctx.session);
+    }
+    return;
+  }
 
+  const dismissedIds: number[] = [];
   const remaining: TrackedMessage[] = [];
   for (const m of list) {
     if (m.type !== "INTERACTIVE") {
       remaining.push(m);
       continue;
     }
+    dismissedIds.push(m.messageId);
     try {
       await ctx.api.deleteMessage(ctx.chatId, m.messageId);
     } catch (err) {
@@ -58,6 +75,11 @@ export async function dismissModalsInScope(ctx: Ctx, scope?: string): Promise<vo
   } else {
     ctx.session.messages[target] = remaining;
   }
+
+  const active = ctx.session.activeModal;
+  if (active !== null && (active.scope === target || dismissedIds.includes(active.messageId))) {
+    dismissActiveModal(ctx.session);
+  }
 }
 
 /**
@@ -67,6 +89,12 @@ export async function dismissModalsInScope(ctx: Ctx, scope?: string): Promise<vo
  *
  * Pre-existing modals in the same scope are dismissed first — the
  * design system disallows stacked modals (§07-toasts-modals.md).
+ *
+ * On a successful send, `session.activeModal` is set so the menu
+ * renderer's lock state can preempt the underlying page until the modal
+ * resolves. Callers that resolve the modal via a non-dismiss path must
+ * call {@link dismissActiveModal} (or route the dismissal through
+ * {@link dismissModalsInScope}).
  *
  * The returned `TrackedMessage` is informational; callers do not need
  * to retain it. Resolution is wired by the action dispatcher matching
@@ -85,7 +113,7 @@ const confirmModal = async (ctx: Ctx, opts: ConfirmOptions): Promise<TrackedMess
     [{ text: cancelLabel, callback_data: cancelCallback }],
   ];
 
-  return send(ctx, text, {
+  const tracked = await send(ctx, text, {
     type: "INTERACTIVE",
     subtype: "CONFIRMATION",
     parseMode: "HTML",
@@ -93,6 +121,14 @@ const confirmModal = async (ctx: Ctx, opts: ConfirmOptions): Promise<TrackedMess
     replyMarkup: { inline_keyboard: keyboard },
     metadata: opts.confirmColor !== undefined ? { confirmColor: opts.confirmColor } : undefined,
   });
+
+  ctx.session.activeModal = {
+    scope,
+    messageId: tracked.messageId,
+    title: opts.title,
+  };
+
+  return tracked;
 };
 
 export const modal: { confirm(ctx: Ctx, opts: ConfirmOptions): Promise<TrackedMessage> } = {

@@ -45,16 +45,26 @@ export const welcomePage: PageDefinition = {
   async keyboard(ctx: Ctx): Promise<InlineKeyboardButton[][]> {
     const projectRoot = ctx.session.projectRoot;
     if (projectRoot === null) {
-      return [
-        [
-          { text: "🆕 New Project", callback_data: "action:architect:new" },
-          { text: "📦 Open Project", callback_data: "action:architect:open" },
-        ],
-        [{ text: "⚙ Settings", callback_data: "nav:/settings" }],
-      ];
+      return unboundKeyboard();
     }
+    // Project is bound — but the on-disk state may have been wiped or
+    // failed to load. In that case we fall back to the unbound branch
+    // so the user isn't stranded with a Continue button that does
+    // nothing useful. The continue handler also detects this and
+    // navigates back to `/`, but doing it here keeps the rendered
+    // keyboard honest.
+    const runner = getArchitectRunner(ctx);
+    const state = await runner.loadCurrent(projectRoot);
+    if (state === null) {
+      return unboundKeyboard();
+    }
+    const pendingGate = runner.pendingGate(state);
+    const continueLabel =
+      pendingGate !== null
+        ? clampLabel(`🟡 ▶ Continue at ${pendingGate}`)
+        : clampLabel("🟢 ✅ View Status");
     return [
-      [{ text: "▶ Continue", callback_data: "action:architect:continue" }],
+      [{ text: continueLabel, callback_data: "action:architect:continue" }],
       [{ text: "🔍 Status", callback_data: "nav:/status" }],
       [{ text: "🔄 Reset Project", callback_data: "action:architect:reset" }],
       [{ text: "⚙ Settings", callback_data: "nav:/settings" }],
@@ -173,4 +183,29 @@ function getNavDeps(ctx: Ctx): {
     throw new DopellerError("internal_db_unavailable", "internal", "no_nav_service");
   }
   return { registry: v.registry, renderer: v.renderer, store: v.store };
+}
+
+/**
+ * Pre-project keyboard. Shown when no `projectRoot` is bound, OR when
+ * a bound `projectRoot` has no readable state on disk (the user has
+ * probably wiped the project folder out-of-band).
+ */
+function unboundKeyboard(): InlineKeyboardButton[][] {
+  return [
+    [
+      { text: "🆕 New Project", callback_data: "action:architect:new" },
+      { text: "📦 Open Project", callback_data: "action:architect:open" },
+    ],
+    [{ text: "⚙ Settings", callback_data: "nav:/settings" }],
+  ];
+}
+
+/**
+ * Clamp a Telegram inline-button label to 64 UTF-16 code units (the
+ * documented maximum for `InlineKeyboardButton.text`). The bound is
+ * defensive: gate identifiers are short, so the dynamic Continue label
+ * never approaches the cap in practice.
+ */
+function clampLabel(text: string): string {
+  return text.length <= 64 ? text : text.slice(0, 64);
 }

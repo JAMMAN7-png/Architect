@@ -70,6 +70,35 @@ active edits the existing one rather than stacking. Keeps the chat
 clean during rapid action sequences (e.g. multiple settings saved in a
 row).
 
+## Toast TTLs (table)
+
+Defaults are baked into `toast.*` and applied at send time. Override
+only when the message MUST live longer for legibility (e.g. a 30 s
+"refund processing" warning) — never to make a transient message
+persistent.
+
+| Subtype | Default TTL | Icon | When to use |
+|---|---|---|---|
+| `INFO` | 3 000 ms | ✅ | Acknowledgement, low cognitive load |
+| `WARNING` | 5 000 ms | ⚠️ | Reader needs a beat to absorb |
+| `DANGER` | 10 000 ms | ❌ | Failure must register; user may need to act |
+
+Auto-eviction is enforced in `messages/send.ts` (see
+[04-messages.md](04-messages.md) §TTL discipline). An ephemeral that
+persists past its TTL is a bug, not a UX choice.
+
+## Modals lock the menu
+
+Calling `modal.confirm(...)` sets `session.activeModal`, which causes the
+menu renderer to paint a **locked body** with a single `× Cancel`
+button. The user cannot interact with the underlying page's keyboard
+until the modal resolves or is dismissed.
+
+- The modal's own Cancel button MUST do something observable: clear `session.activeModal`, dismiss interactive messages in scope, and rerender the menu. An inert cancel button is a bug.
+- Action handlers MUST register **both** confirm and cancel callbacks. Lint rule (TODO) flags any `modal.confirm` whose `cancelCallback` is unregistered.
+- See [03-menu.md](03-menu.md) §Menu reflects state for the lock contract.
+- See [08-error-handling.md](08-error-handling.md) §Cancel buttons MUST be implemented.
+
 ## Modals
 
 ### `modal.confirm`

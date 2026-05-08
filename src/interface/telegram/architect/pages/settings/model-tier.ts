@@ -1,5 +1,4 @@
 import { makeSettingsService } from "../../../../../config/service.ts";
-import { listKnownModels } from "../../../../../llm/models.ts";
 import {
   type Ctx,
   type InlineKeyboardButton,
@@ -7,13 +6,18 @@ import {
   type PageDefinition,
   escapeHtml,
 } from "../../../engine/index.ts";
+import { indexedSettingsCallback } from "../../../engine/router/callback.ts";
+import { settingsCandidates } from "../../settings-actions.ts";
 
 /**
  * `/settings/models/<tier>` — pick the model used for a single tier or
  * toggle ensemble membership. Single-value tiers render one row per
- * known slug as `action:settings:set:models.<tier>:<slug>`. The
+ * known slug as `action:settings:set:models.<tier>:idx:<n>`. The
  * ensemble tier renders one toggle row per slug
- * (`action:settings:toggle:models.ensemble:<slug>`).
+ * (`action:settings:toggle:models.ensemble:idx:<n>`). Indexed callbacks
+ * keep `callback_data` under Telegram's 64-byte cap regardless of slug
+ * length; the action handler resolves `idx:<n>` back to the slug via
+ * the same enumeration ({@link settingsCandidates}).
  */
 
 export type ModelTier = "strategic" | "execution" | "ui" | "fallback" | "ensemble";
@@ -59,32 +63,35 @@ export function makeModelTierPage(tier: ModelTier): PageDefinition {
     async keyboard(_ctx: Ctx): Promise<InlineKeyboardButton[][]> {
       const svc = makeSettingsService();
       const cfg = await svc.load();
-      const slugs = listKnownModels();
+      const key = `models.${tier}`;
+      const slugs = settingsCandidates(key);
       const rows: InlineKeyboardButton[][] = [];
       if (tier === "ensemble") {
         const enabled = new Set(cfg.models.ensemble);
-        for (const slug of slugs) {
-          const icon = enabled.has(slug) ? "🔴" : "⚪";
+        for (let i = 0; i < slugs.length; i++) {
+          const slug = slugs[i] ?? "";
+          const icon = enabled.has(slug) ? "🟢" : "⚪";
           rows.push([
             {
               text: `${icon} ${slug}`,
-              callback_data: `action:settings:toggle:models.ensemble:${slug}`,
+              callback_data: indexedSettingsCallback("toggle", key, i),
             },
           ]);
         }
       } else {
         const current = cfg.models[tier];
-        for (const slug of slugs) {
-          const icon = slug === current ? "⭐" : "·";
+        for (let i = 0; i < slugs.length; i++) {
+          const slug = slugs[i] ?? "";
+          const icon = slug === current ? "⭐" : "▫";
           rows.push([
             {
               text: `${icon} ${slug}`,
-              callback_data: `action:settings:set:models.${tier}:${slug}`,
+              callback_data: indexedSettingsCallback("set", key, i),
             },
           ]);
         }
       }
-      rows.push([{ text: "⬅ Back", callback_data: "nav:/settings/models" }]);
+      rows.push([{ text: "⬅️ Back", callback_data: "nav:/settings/models" }]);
       return rows;
     },
   };

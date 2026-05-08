@@ -1,5 +1,6 @@
 import type { Bot, Context as GrammyContext } from "grammy";
-import { makeSettingsService } from "../../../config/service.ts";
+import { LLM_PROVIDERS, SEARCH_PROVIDERS, makeSettingsService } from "../../../config/service.ts";
+import { listKnownModels } from "../../../llm/models.ts";
 import {
   type Ctx,
   DopellerError,
@@ -56,7 +57,17 @@ function makeToggleHandler(deps: ActionDeps): (gctx: GrammyContext) => Promise<v
         });
       }
       const key = m[1] ?? "";
-      const member = m[2] ?? "";
+      let member = m[2] ?? "";
+      if (member.startsWith("idx:")) {
+        const idx = Number.parseInt(member.slice(4), 10);
+        const resolved = resolveIndexed(key, idx);
+        if (resolved === null) {
+          await toast.danger(ctx, "Unknown option.");
+          await deps.store.save(ctx.session);
+          return;
+        }
+        member = resolved;
+      }
       const svc = makeSettingsService();
       const current = await svc.load();
       try {
@@ -91,7 +102,17 @@ function makeSetHandler(deps: ActionDeps): (gctx: GrammyContext) => Promise<void
         });
       }
       const key = m[1] ?? "";
-      const raw = m[2] ?? "";
+      let raw = m[2] ?? "";
+      if (raw.startsWith("idx:")) {
+        const idx = Number.parseInt(raw.slice(4), 10);
+        const resolved = resolveIndexed(key, idx);
+        if (resolved === null) {
+          await toast.danger(ctx, "Unknown option.");
+          await deps.store.save(ctx.session);
+          return;
+        }
+        raw = resolved;
+      }
       const svc = makeSettingsService();
       const current = await svc.load();
       try {
@@ -275,4 +296,38 @@ async function saveSessionViaServices(ctx: Ctx): Promise<void> {
     // Pipeline session-save did not run because input-capture short-
     // circuited; failure here is non-fatal.
   }
+}
+
+// ── Indexed-callback resolver registry ───────────────────────────────
+
+/**
+ * Map a settings key to its ordered candidate slug list. The same list
+ * MUST back the page's keyboard so `idx` round-trips. Adding a new
+ * indexed key requires updating both the page and {@link candidatesFor}.
+ */
+function candidatesFor(key: string): readonly string[] {
+  if (
+    key === "models.strategic" ||
+    key === "models.execution" ||
+    key === "models.ui" ||
+    key === "models.fallback" ||
+    key === "models.ensemble"
+  ) {
+    return listKnownModels();
+  }
+  if (key === "llm.enabled_providers") return LLM_PROVIDERS;
+  if (key === "search.enabled_providers" || key === "search.provider") return SEARCH_PROVIDERS;
+  return [];
+}
+
+function resolveIndexed(key: string, idx: number): string | null {
+  if (!Number.isFinite(idx)) return null;
+  const candidates = candidatesFor(key);
+  if (idx < 0 || idx >= candidates.length) return null;
+  return candidates[idx] ?? null;
+}
+
+/** Exported for pages to use the same enumeration when building keyboards. */
+export function settingsCandidates(key: string): readonly string[] {
+  return candidatesFor(key);
 }

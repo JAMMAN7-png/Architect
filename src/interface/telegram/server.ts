@@ -15,6 +15,7 @@ import { Bot, type Context as GrammyContext } from "grammy";
 
 import { TeleFocus } from "./engine/bootstrap.ts";
 import type { InputFlowEngine } from "./engine/flow/engine.ts";
+import { dismissModalsInScope } from "./engine/messages/modal.ts";
 import type { PageRegistry } from "./engine/registry.ts";
 import type { MenuRenderer } from "./engine/renderer/menu-renderer.ts";
 import { resolveStart } from "./engine/router/deep-link.ts";
@@ -84,6 +85,31 @@ export async function startTelefocusBot(opts: StartOptions): Promise<Bot> {
 
     const session = await opts.store.load(ctx.userId, ctx.chatId);
     ctx.session = session;
+
+    // Always cancel any in-flight flow / modal so /start truly is a hard
+    // reset. Cancellation MUST happen before navigateTo, otherwise the
+    // renderer's lock state will keep painting the lock screen instead
+    // of the resolved deep-link target.
+    if (session.inputFlow.active) {
+      await tf.flow.cancel(ctx);
+    }
+    if (session.activeModal !== null) {
+      await dismissModalsInScope(ctx, session.activeModal.scope);
+    }
+
+    // Discard the prior menu so a fresh one renders at the chat bottom.
+    await tf.renderer.forceFresh(ctx);
+
+    // Best-effort delete the user's `/start` message so the chat stays
+    // clean. Telegram only allows this for ~48h and only when the bot
+    // has the right; failure is forgivable.
+    if (grammyCtx.message?.message_id !== undefined) {
+      try {
+        await ctx.api.deleteMessage(ctx.chatId, grammyCtx.message.message_id);
+      } catch {
+        // forgivable
+      }
+    }
 
     const payload = grammyCtx.match;
     const payloadStr = typeof payload === "string" && payload.length > 0 ? payload : undefined;

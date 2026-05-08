@@ -57,7 +57,7 @@ export const settingsModelsIndexPage: PageDefinition = {
           callback_data: "nav:/settings/models/ensemble",
         },
       ],
-      [{ text: "⬅ Back", callback_data: "nav:/settings" }],
+      [{ text: "⬅️ Back", callback_data: "nav:/settings" }],
     ];
   },
 };

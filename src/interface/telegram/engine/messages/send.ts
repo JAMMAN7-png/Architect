@@ -1,4 +1,11 @@
-import type { Ctx, MessageSubtype, SendOptions, TrackedMessage } from "../types.ts";
+import type {
+  BotApi,
+  Ctx,
+  MessageSubtype,
+  SendOptions,
+  TrackedMessage,
+  UserSession,
+} from "../types.ts";
 import { trackMessage, untrackMessage } from "./tracking.ts";
 
 /**
@@ -81,6 +88,108 @@ const shouldReplace = (opts: SendOptions): boolean => {
 };
 
 /**
+ * Module-level scheduler for ephemeral-message TTL eviction.
+ *
+ * When `send()` records a `TrackedMessage` with an `expiresAt`, this
+ * layer schedules a `setTimeout` to:
+ *   1. delete the chat message (best-effort),
+ *   2. drop the entry from `session.messages[scope]`,
+ *   3. flush the session via `ctx.services.nav.store` if available.
+ *
+ * Timers are keyed by `${chatId}:${messageId}` so an in-place edit of
+ * a tracked message can refresh — or cancel — its eviction without
+ * leaking the original timer. Captured state is intentionally narrow
+ * (api, chatId, session, optional store) so a long TTL does not pin
+ * the full `Ctx` graph in memory.
+ */
+
+type CapturedCtx = {
+  api: BotApi;
+  chatId: number;
+  session: UserSession;
+};
+
+type TtlDeleter = (chatId: number, messageId: number, ctx: Ctx) => Promise<void>;
+
+interface NavStoreLike {
+  save(session: UserSession): Promise<boolean>;
+}
+
+const ttlTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
+const defaultDeleter: TtlDeleter = async (chatId, messageId, ctx) => {
+  await ctx.api.deleteMessage(chatId, messageId);
+};
+
+let activeDeleter: TtlDeleter = defaultDeleter;
+
+const ttlKey = (chatId: number, messageId: number): string => `${chatId}:${messageId}`;
+
+function readNavStore(ctx: Ctx): NavStoreLike | undefined {
+  const services = ctx.services as { nav?: { store?: NavStoreLike } };
+  return services.nav?.store;
+}
+
+/** Cancel any pending TTL eviction for `(chatId, messageId)`. */
+export function cancelTtlTimer(chatId: number, messageId: number): void {
+  const key = ttlKey(chatId, messageId);
+  const timer = ttlTimers.get(key);
+  if (timer === undefined) return;
+  clearTimeout(timer);
+  ttlTimers.delete(key);
+}
+
+/**
+ * Test seam: replace the deleter (defaults to
+ * `(_, _, ctx) => ctx.api.deleteMessage(...)`). Pass `null` to restore
+ * the default.
+ */
+export function __setTtlDeleterForTests(
+  fn: ((chatId: number, messageId: number, ctx: Ctx) => Promise<void>) | null,
+): void {
+  activeDeleter = fn ?? defaultDeleter;
+}
+
+function scheduleTtl(ctx: Ctx, tracked: TrackedMessage): void {
+  const { messageId, expiresAt, pagePath } = tracked;
+  const chatId = ctx.chatId;
+  cancelTtlTimer(chatId, messageId);
+  if (expiresAt === undefined) return;
+  const captured: CapturedCtx = {
+    api: ctx.api,
+    chatId,
+    session: ctx.session,
+  };
+  const store = readNavStore(ctx);
+  const key = ttlKey(chatId, messageId);
+  const delay = Math.max(0, expiresAt - Date.now());
+  const timer = setTimeout(async () => {
+    ttlTimers.delete(key);
+    try {
+      // Pass the captured slice as `Ctx`; the default deleter only
+      // touches `api`, and test deleters receive the same narrow shape.
+      await activeDeleter(chatId, messageId, captured as unknown as Ctx);
+    } catch {
+      // best-effort — user may have deleted the message manually.
+    }
+    untrackMessage(captured.session, pagePath, messageId);
+    if (store !== undefined) {
+      try {
+        await store.save(captured.session);
+      } catch {
+        // non-fatal: the regular pipeline session-flush will catch up
+        // on the next update.
+      }
+    }
+  }, delay);
+  // Don't keep the bot process alive purely for a pending TTL: the
+  // long-lived grammY listeners already do that, and unref'ing keeps
+  // test processes from hanging on a 10 s DANGER timer.
+  (timer as { unref?: () => void }).unref?.();
+  ttlTimers.set(key, timer);
+}
+
+/**
  * Send (or edit-replace) a message and track it under a page scope.
  *
  * See file-level doc-comment for invariants.
@@ -103,6 +212,7 @@ export async function send(ctx: Ctx, text: string, opts: SendOptions): Promise<T
         prior.expiresAt = ttlMs !== undefined ? Date.now() + ttlMs : undefined;
         if (opts.metadata !== undefined) prior.metadata = opts.metadata;
         ctx.session.lastInteractionAt = Date.now();
+        scheduleTtl(ctx, prior);
         return prior;
       } catch (err) {
         if (!isMessageNotFoundError(err)) throw err;
@@ -129,6 +239,7 @@ export async function send(ctx: Ctx, text: string, opts: SendOptions): Promise<T
     ...(opts.metadata !== undefined ? { metadata: opts.metadata } : {}),
   };
   trackMessage(ctx.session, tracked);
+  scheduleTtl(ctx, tracked);
   return tracked;
 }
 

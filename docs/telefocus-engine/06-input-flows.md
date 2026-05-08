@@ -346,6 +346,33 @@ export const personaCreationFlow: InputFlowDefinition = {
 };
 ```
 
+## Validation-error semantics
+
+Validation rejection does **not** cancel the flow. The engine's
+`capture` path on rejection:
+
+1. Edits the existing prompt in place: `errorMessage + "\n\n" + step.prompt` (one `editMessageText` on the tracked `INPUT_PROMPT`).
+2. Deletes the user's reply best-effort (try/catch — Telegram may forbid it).
+3. Returns `"rejected"`.
+4. Leaves `session.inputFlow.active === true` and `awaitingInput === true`.
+
+No retry counter, no auto-cancel, no toast. The flow stays alive until
+one of:
+
+- a `flow:{flowId}:cancel` callback (explicit user cancel),
+- a `nav:*` callback (navigation away cancels first, navigates second),
+- `/start` tear-down,
+- successful `onComplete`.
+
+`maxRetries` (when present in legacy definitions) is treated as
+advisory metadata; the engine ignores it. Pages that need a hard
+ceiling MUST encode the count inside their validator and emit a
+`platform`-severity error from there.
+
+See [design-system/05-input-flows.md](../design-system/05-input-flows.md)
+§Validation never closes the flow and
+[design-system/12-golden-rules.md](../design-system/12-golden-rules.md) §3.
+
 ## Cross-links
 
 - Blueprint: [06-input-flows](../blueprint/05-wave-2-core-engines/telefocus-engine/06-input-flows.md)

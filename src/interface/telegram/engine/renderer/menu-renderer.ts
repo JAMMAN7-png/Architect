@@ -1,3 +1,5 @@
+import { escapeHtml } from "../messages/sanitise.ts";
+import { cancelTtlTimer } from "../messages/send.ts";
 import { trackMessage } from "../messages/tracking.ts";
 import { type PageRegistry, defaultRegistry } from "../registry.ts";
 import type { SessionStore } from "../session/store.ts";
@@ -23,7 +25,11 @@ import {
  *     send a fresh message and retry once,
  *   - swallow Telegram's `message is not modified` 400 as success,
  *   - per-instance idempotency cache keyed by `chatId:menuMessageId` so
- *     byte-equal re-renders short-circuit before hitting the network.
+ *     byte-equal re-renders short-circuit before hitting the network,
+ *   - lock state: when the session has an active input flow or active
+ *     modal, paint a locked body with a single Cancel button instead of
+ *     asking the page for its body/keyboard. Modals strictly preempt
+ *     input flows.
  */
 
 /** Telegram's stale-id error: `message to edit not found`. */
@@ -44,6 +50,21 @@ const errorMatches = (err: unknown, needle: string): boolean => {
 interface RenderCacheEntry {
   text: string;
   markup: string;
+}
+
+interface CommitArgs {
+  text: string;
+  parseMode: string;
+  replyMarkup: InlineKeyboardMarkup;
+  /** Page path the rendered MENU message should be tracked under. */
+  pagePath: string;
+  /** Whether to update `session.menu.currentPage` on success. */
+  updateCurrentPage: boolean;
+}
+
+interface LockedRenderOpts {
+  body: string;
+  cancelData: string;
 }
 
 export class MenuRenderer {
@@ -79,6 +100,32 @@ export class MenuRenderer {
   }
 
   /**
+   * Discard the tracked menu message (best-effort delete) so the next
+   * `renderMenu` call sends a fresh one at the chat bottom. Used by the
+   * `/start` handler so users always see a fresh menu after invoking
+   * the command, regardless of where in the conversation they were.
+   *
+   * Idempotent: a no-op when no menu message is tracked. Telegram
+   * delete failures (manual deletion by the user, expired bot rights,
+   * 48h limit) are forgiven.
+   */
+  async forceFresh(ctx: Ctx): Promise<void> {
+    const messageId = ctx.session.menu.messageId;
+    if (messageId !== null) {
+      cancelTtlTimer(ctx.chatId, messageId);
+      try {
+        await ctx.api.deleteMessage(ctx.chatId, messageId);
+      } catch {
+        // Forgive Telegram failures: user may have deleted manually.
+      }
+      ctx.session.menu.messageId = null;
+    }
+    // Drop any cached idempotency entries so the next render does not
+    // short-circuit because the cached body matches the previous menu.
+    this.#dropCacheForChat(ctx.chatId);
+  }
+
+  /**
    * Edit only the inline keyboard on the current menu message. Telegram
    * rate-limits text edits more aggressively than markup-only edits, so
    * callers that change just the keyboard (toggles, selections) should
@@ -102,49 +149,106 @@ export class MenuRenderer {
   }
 
   async #render(ctx: Ctx, page: PageDefinition, retried: boolean): Promise<void> {
+    // Lock state: modals strictly preempt input flows. While either lock
+    // is active, the menu does not consult the page — it shows a holding
+    // body with a single Cancel button instead.
+    if (ctx.session.activeModal !== null) {
+      await this.#renderLocked(
+        ctx,
+        {
+          body: `⏳ ${escapeHtml(ctx.session.activeModal.title)} is open. Resolve it before continuing.`,
+          cancelData: "action:engine:modal:cancel",
+        },
+        retried,
+      );
+      return;
+    }
+    if (ctx.session.inputFlow.active) {
+      await this.#renderLocked(
+        ctx,
+        {
+          body: "⏳ Waiting for your input. Send the value as a message, or tap Cancel.",
+          cancelData: "action:engine:flow:cancel",
+        },
+        retried,
+      );
+      return;
+    }
+
     const body = await page.render(ctx);
     const keyboard = await page.keyboard(ctx);
-    const replyMarkup: InlineKeyboardMarkup = { inline_keyboard: keyboard };
-    const parseMode = body.parseMode ?? "HTML";
-    const markupJson = JSON.stringify(replyMarkup);
+    await this.#commit(
+      ctx,
+      {
+        text: body.text,
+        parseMode: body.parseMode ?? "HTML",
+        replyMarkup: { inline_keyboard: keyboard },
+        pagePath: page.path,
+        updateCurrentPage: true,
+      },
+      retried,
+    );
+  }
 
+  async #renderLocked(ctx: Ctx, opts: LockedRenderOpts, retried: boolean): Promise<void> {
+    const replyMarkup: InlineKeyboardMarkup = {
+      inline_keyboard: [[{ text: "× Cancel", callback_data: opts.cancelData }]],
+    };
+    await this.#commit(
+      ctx,
+      {
+        text: opts.body,
+        parseMode: "HTML",
+        replyMarkup,
+        // Track under the current page so cleanup stays scoped correctly.
+        pagePath: ctx.session.menu.currentPage,
+        // Locked renders do NOT change the user's current page — they
+        // overlay the existing menu while the lock is held.
+        updateCurrentPage: false,
+      },
+      retried,
+    );
+  }
+
+  async #commit(ctx: Ctx, args: CommitArgs, retried: boolean): Promise<void> {
+    const markupJson = JSON.stringify(args.replyMarkup);
     const existingId = ctx.session.menu.messageId;
 
     if (existingId == null) {
-      const sent = await ctx.api.sendMessage(ctx.chatId, body.text, {
-        parse_mode: parseMode,
-        reply_markup: replyMarkup,
+      const sent = await ctx.api.sendMessage(ctx.chatId, args.text, {
+        parse_mode: args.parseMode,
+        reply_markup: args.replyMarkup,
       });
       ctx.session.menu.messageId = sent.message_id;
       trackMessage(ctx.session, {
         messageId: sent.message_id,
         type: "MENU",
-        pagePath: page.path,
+        pagePath: args.pagePath,
         createdAt: Date.now(),
       });
       this.#cache.set(this.#cacheKey(ctx.chatId, sent.message_id), {
-        text: body.text,
+        text: args.text,
         markup: markupJson,
       });
-      if (ctx.session.menu.currentPage !== page.path) {
-        ctx.session.menu.currentPage = page.path;
+      if (args.updateCurrentPage && ctx.session.menu.currentPage !== args.pagePath) {
+        ctx.session.menu.currentPage = args.pagePath;
       }
       return;
     }
 
     const key = this.#cacheKey(ctx.chatId, existingId);
     const cached = this.#cache.get(key);
-    if (cached && cached.text === body.text && cached.markup === markupJson) {
-      if (ctx.session.menu.currentPage !== page.path) {
-        ctx.session.menu.currentPage = page.path;
+    if (cached && cached.text === args.text && cached.markup === markupJson) {
+      if (args.updateCurrentPage && ctx.session.menu.currentPage !== args.pagePath) {
+        ctx.session.menu.currentPage = args.pagePath;
       }
       return;
     }
 
     try {
-      await ctx.api.editMessageText(ctx.chatId, existingId, body.text, {
-        parse_mode: parseMode,
-        reply_markup: replyMarkup,
+      await ctx.api.editMessageText(ctx.chatId, existingId, args.text, {
+        parse_mode: args.parseMode,
+        reply_markup: args.replyMarkup,
       });
     } catch (err) {
       if (errorMatches(err, NOT_MODIFIED_NEEDLE)) {
@@ -153,20 +257,32 @@ export class MenuRenderer {
       } else if (errorMatches(err, NOT_FOUND_NEEDLE) && !retried) {
         ctx.session.menu.messageId = null;
         this.#cache.delete(key);
-        await this.#render(ctx, page, true);
+        await this.#commit(ctx, args, true);
         return;
       } else {
         throw err;
       }
     }
 
-    this.#cache.set(key, { text: body.text, markup: markupJson });
-    if (ctx.session.menu.currentPage !== page.path) {
-      ctx.session.menu.currentPage = page.path;
+    this.#cache.set(key, { text: args.text, markup: markupJson });
+    if (args.updateCurrentPage && ctx.session.menu.currentPage !== args.pagePath) {
+      ctx.session.menu.currentPage = args.pagePath;
     }
   }
 
   #cacheKey(chatId: number, messageId: number): string {
     return `${chatId}:${messageId}`;
+  }
+
+  /**
+   * Drop every idempotency cache entry tied to `chatId`. Called by
+   * {@link forceFresh} so the next render is not short-circuited by a
+   * byte-equal body still present in the cache.
+   */
+  #dropCacheForChat(chatId: number): void {
+    const prefix = `${chatId}:`;
+    for (const key of this.#cache.keys()) {
+      if (key.startsWith(prefix)) this.#cache.delete(key);
+    }
   }
 }

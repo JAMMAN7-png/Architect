@@ -194,6 +194,44 @@ await toast.info(ctx, `Renamed to ${escapeHtml(newName)}.`);
 MarkdownV2 is used only for verbatim user-quoted content where
 preserving original formatting matters.
 
+## TTL discipline (auto-vanish)
+
+Every `EPHEMERAL` subtype has a non-negotiable default TTL. Auto-eviction
+is scheduled inside `messages/send.ts` at write time; the timer ID lives
+in a module-level `Map<chatId:messageId, Timeout>` so a single tracked
+message has at most one in-flight timer.
+
+| Subtype | Default TTL | Why |
+|---|---|---|
+| `INFO` | 3 000 ms | Acknowledgement, low cognitive load |
+| `WARNING` | 5 000 ms | Reader needs a beat to absorb |
+| `DANGER` | 10 000 ms | Failure must register; user may need to act |
+
+Rules:
+
+- `INTERACTIVE`, `MODAL`, `MENU`, `INPUT_PROMPT`, `INPUT_PROGRESS` carry **no** TTL — they are dismissed by user action or scope cleanup.
+- After deletion the tracked-message entry is removed and `sessionDirty = true` (so the eviction persists across crashes).
+- Replacing an existing tracked message via `replacePrevious` reschedules the timer to the new TTL; the old timer is cancelled.
+- Callers that need to cancel the timer explicitly (e.g. promote an INFO into a permanent banner) MUST call `cancelTtlTimer(chatId, messageId)`; never reach into the `Map` directly.
+- Cardinal rule summary: [12-golden-rules.md](12-golden-rules.md) §2.
+
+## 64-byte callback_data invariant
+
+Telegram caps `callback_data` at **64 UTF-8 bytes**. Exceeding the limit
+returns `BUTTON_DATA_INVALID`, which fails the entire `editMessageText`
+call and breaks the menu render — a single bad button takes the whole
+page down.
+
+Slug-bearing actions (anything that interpolates user content, IDs, or
+settings keys into the callback string) MUST be emitted via:
+
+- `indexedSettingsCallback(verb, key, idx)` — replaces the slug with a stable index into the keyboard payload.
+- `assertCallbackData(str)` — runtime guard for hand-built callback strings; throws if the encoded length exceeds 64 bytes.
+
+Multi-byte characters (emojis, non-ASCII labels) cost more than one byte
+each; budget accordingly. Cardinal rule summary:
+[12-golden-rules.md](12-golden-rules.md) §4.
+
 ## Success criteria
 
 - [ ] No handler calls `ctx.api.sendMessage` directly (ESLint rule `telefocus/no-raw-send`).

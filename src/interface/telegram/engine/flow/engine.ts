@@ -1,5 +1,4 @@
-import { send } from "../messages/send.ts";
-import { toast } from "../messages/toast.ts";
+import { replacePrevious, send } from "../messages/send.ts";
 import { cleanupScope } from "../messages/tracking.ts";
 import type { PageRegistry } from "../registry.ts";
 import type { SessionStore } from "../session/store.ts";
@@ -47,8 +46,6 @@ export interface InputFlowDeps {
 }
 
 export type CaptureOutcome = "advanced" | "rejected" | "completed";
-
-const DEFAULT_MAX_RETRIES = 3;
 
 export class InputFlowEngine {
   readonly #deps: InputFlowDeps;
@@ -161,13 +158,20 @@ export class InputFlowEngine {
     }
 
     if (!result.ok) {
-      flow.retries += 1;
-      const limit = flowDef.maxRetries ?? DEFAULT_MAX_RETRIES;
-      if (flow.retries > limit) {
-        await this.cancel(ctx);
-        return "rejected";
+      // Validation failure: surface the validator's `errorMessage` by
+      // editing the prompt message in place. The flow remains active and
+      // keeps awaiting input — `maxRetries` is advisory only and no
+      // longer auto-cancels (see ConfigDoc on InputFlowDefinition).
+      flow.retries = 0;
+      const promptText = `${result.reason}\n\n${formatPromptText(step, flow.collectedData)}`;
+      await replacePrevious(ctx, promptText, buildPromptOptions(pagePath, flowId, step));
+      if (step.inputType !== "selection" && ctx.message !== undefined) {
+        try {
+          await ctx.api.deleteMessage(ctx.chatId, ctx.message.message_id);
+        } catch {
+          // Best-effort: design-system §04 forgives delete failures.
+        }
       }
-      await toast.danger(ctx, result.reason);
       await this.#deps.store.save(ctx.session);
       return "rejected";
     }
