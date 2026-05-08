@@ -99,3 +99,15 @@ callback length from content length.
 `indexedSettingsCallback` and `assertCallbackData` are the only
 sanctioned ways to construct slug-bearing callbacks. See
 [04-messages.md](04-messages.md) §64-byte callback_data invariant.
+
+## 5. Custom emoji belongs in bodies, not buttons
+
+Telegram only parses HTML in **message bodies**. Inline-keyboard `text` fields are plain text, so `<tg-emoji>` does NOT render there. Use `ce(intent)` in `render()` bodies and modal/toast titles; use `ceText(intent)` (or static glyphs) in `keyboard()` rows.
+
+### Why
+
+A `<tg-emoji>` tag inside a button label renders as raw text (`<tg-emoji emoji-id=…`), which both leaks implementation and breaks the 64-byte cap.
+
+### Enforcement
+
+`src/interface/telegram/engine/messages/custom-emoji.ts` exposes `ce()` and `ceText()` separately so the right shape is unambiguous at every call site. Pages that need a glyph in a button MUST use `ceText` (or a static literal).

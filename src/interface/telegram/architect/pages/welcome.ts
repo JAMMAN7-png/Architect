@@ -9,6 +9,7 @@ import {
   navigateTo,
   toast,
 } from "../../engine/index.ts";
+import { ce } from "../../engine/messages/custom-emoji.ts";
 import { GATE_PATHS } from "../actions.ts";
 import { getArchitectRunner } from "../runner.ts";
 
@@ -126,7 +127,7 @@ function makeNewProjectFlow(): InputFlowDefinition {
 
 function greetingBody(): string {
   return [
-    "<b>Architect</b>",
+    `${ce("primary")} <b>Architect</b>`,
     "",
     "Turn an idea into a frozen blueprint and a strict per-service docs tree.",
     "Walk through ten gates — sketch, research, decisions, docs — each one paused for your approval.",
@@ -143,7 +144,7 @@ function activeProjectBody(state: {
   const lines = [
     `<b>${escapeHtml(state.projectName)}</b>`,
     "",
-    `Stage: <code>${escapeHtml(state.currentStage)}</code>`,
+    `${ce("info")} Stage: <code>${escapeHtml(state.currentStage)}</code>`,
   ];
   if (state.pendingApproval !== null) {
     lines.push(

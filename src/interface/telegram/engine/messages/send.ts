@@ -6,6 +6,7 @@ import type {
   TrackedMessage,
   UserSession,
 } from "../types.ts";
+import { ce, ceText } from "./custom-emoji.ts";
 import { trackMessage, untrackMessage } from "./tracking.ts";
 
 /**
@@ -35,11 +36,19 @@ export const DEFAULT_TTL: Record<EphemeralSubtype, number> = {
   DANGER: 10000,
 };
 
-/** Icons auto-prepended to ephemeral copy unless `metadata.noIcon` is set. */
+/**
+ * Icons auto-prepended to ephemeral copy unless `metadata.noIcon` is set.
+ *
+ * Re-exported as plain glyphs (sourced from {@link ceText}) so existing
+ * callers and tests that import this constant continue to see human
+ * Unicode glyphs even when a Telegram custom-emoji id is configured.
+ * The actual body prefix in `buildFinalText` uses {@link ce} so the
+ * rendered message benefits from premium custom emoji when available.
+ */
 export const DEFAULT_ICON: Record<EphemeralSubtype, string> = {
-  INFO: "✅ ",
-  WARNING: "⚠️ ",
-  DANGER: "❌ ",
+  INFO: ceText("success"),
+  WARNING: ceText("warning"),
+  DANGER: ceText("error"),
 };
 
 const isEphemeralSubtype = (s: MessageSubtype | undefined): s is EphemeralSubtype =>
@@ -64,7 +73,9 @@ const buildFinalText = (text: string, opts: SendOptions): string => {
   if (opts.type !== "EPHEMERAL") return text;
   if (!isEphemeralSubtype(opts.subtype)) return text;
   if (opts.metadata?.noIcon === true) return text;
-  return DEFAULT_ICON[opts.subtype] + text;
+  const intent =
+    opts.subtype === "INFO" ? "success" : opts.subtype === "WARNING" ? "warning" : "error";
+  return `${ce(intent)} ${text}`;
 };
 
 const resolveTtlMs = (opts: SendOptions): number | undefined => {

@@ -1,5 +1,6 @@
 import { logger } from "../../../../util/logger.ts";
 import type { Ctx, InlineKeyboardButton, TrackedMessage, UserSession } from "../types.ts";
+import { ce } from "./custom-emoji.ts";
 import { escapeHtml } from "./sanitise.ts";
 import { send } from "./send.ts";
 
@@ -107,7 +108,7 @@ const confirmModal = async (ctx: Ctx, opts: ConfirmOptions): Promise<TrackedMess
   const cancelLabel = opts.cancelLabel ?? "← Cancel";
   const cancelCallback = opts.cancelCallback ?? "action:modal:cancel";
 
-  const text = `<b>${escapeHtml(opts.title)}</b>\n\n${escapeHtml(opts.body)}`;
+  const text = `${ce("modal-lock")} <b>${escapeHtml(opts.title)}</b>\n\n${escapeHtml(opts.body)}`;
   const keyboard: InlineKeyboardButton[][] = [
     [{ text: opts.confirmLabel, callback_data: opts.confirmCallback }],
     [{ text: cancelLabel, callback_data: cancelCallback }],

@@ -194,6 +194,24 @@ await toast.info(ctx, `Renamed to ${escapeHtml(newName)}.`);
 MarkdownV2 is used only for verbatim user-quoted content where
 preserving original formatting matters.
 
+## Custom emoji entities
+
+Telegram supports per-message custom emoji via the `<tg-emoji emoji-id="…">fallback</tg-emoji>` HTML span (parse_mode: "HTML"). The engine wraps this in a typed registry:
+
+- `EmojiIntent` enumerates eleven UX intents (success, error, warning, info, primary, destructive, edit, continue, modal-lock, flow-lock, loading).
+- `ce(intent)` returns trusted HTML. Compose with `escapeHtml(userInput)` for user-controlled fragments.
+- `ceText(intent)` returns the bare fallback glyph. Use it in **inline-keyboard button labels** (Telegram does not parse HTML there).
+- IDs are configured via `TG_CUSTOM_EMOJI_<INTENT>` env vars. Empty / missing → fallback-only render (non-Premium look).
+- The bot must hold the Premium-emoji entitlement for the chosen emoji set; otherwise Telegram falls back to the literal glyph for non-Premium recipients.
+
+### Allowlist
+
+`safeBodyHtml(s)` enforces only Telegram-supported tags (`b, i, u, s, code, pre, a, br, tg-emoji`). Use it as a guard at the send boundary when composing trusted fragments.
+
+### Buttons stay plain
+
+Button labels MUST be plain text + static glyphs only. Custom emojis only render in message bodies.
+
 ## TTL discipline (auto-vanish)
 
 Every `EPHEMERAL` subtype has a non-negotiable default TTL. Auto-eviction

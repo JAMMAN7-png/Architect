@@ -89,6 +89,12 @@ discipline and [design-system/12-golden-rules.md](../design-system/12-golden-rul
 - After deletion, the tracked-message entry is removed from `session.messages[pagePath]` and `sessionDirty` is set so the eviction survives a crash.
 - Replacing an existing tracked message via `replacePrevious` cancels the old timer and reschedules to the new TTL.
 
+## Custom emoji rendering
+
+The engine ships a typed `EmojiIntent` → `CustomEmojiSpec` registry in `messages/custom-emoji.ts`. `ce(intent)` returns either a `<tg-emoji emoji-id="…">fallback</tg-emoji>` span (when an env-configured id is present and digit-validated) or the bare fallback glyph. `send.ts` uses it for ephemeral icon prefixes; modal titles and locked-menu bodies consume it via `ce("modal-lock")` / `ce("flow-lock")`.
+
+IDs come from environment (`TG_CUSTOM_EMOJI_<INTENT>`) so deployments can be re-skinned without redeploys. Premium entitlement is required for non-Premium recipients to render the animated form; otherwise Telegram serves the static fallback.
+
 ## TTL scheduler
 
 Both active and lazy strategies, as mandated by the blueprint.

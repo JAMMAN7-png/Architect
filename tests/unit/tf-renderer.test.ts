@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { ce } from "../../src/interface/telegram/engine/messages/custom-emoji.ts";
 import { PageRegistry } from "../../src/interface/telegram/engine/registry.ts";
 import { MenuRenderer } from "../../src/interface/telegram/engine/renderer/menu-renderer.ts";
 import { MemorySessionStore } from "../../src/interface/telegram/engine/session/store.ts";
@@ -94,6 +95,7 @@ describe("MenuRenderer lock state", () => {
     const text = sent?.[1] as string;
     expect(text).not.toContain("A-page-body");
     expect(text).toContain("Waiting for your input");
+    expect(text.startsWith(`${ce("flow-lock")} `)).toBe(true);
 
     const opts = sent?.[2] as { reply_markup?: { inline_keyboard: unknown[][] } };
     const keyboard = opts?.reply_markup?.inline_keyboard ?? [];
@@ -119,6 +121,7 @@ describe("MenuRenderer lock state", () => {
     expect(text).not.toContain("A-page-body");
     expect(text).toContain("Confirm thing");
     expect(text).toContain("Resolve it");
+    expect(text.startsWith(`${ce("modal-lock")} `)).toBe(true);
 
     const opts = sent?.[2] as { reply_markup?: { inline_keyboard: unknown[][] } };
     const keyboard = opts?.reply_markup?.inline_keyboard ?? [];

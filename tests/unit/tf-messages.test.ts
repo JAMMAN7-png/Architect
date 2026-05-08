@@ -1,4 +1,5 @@
-import { describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, test } from "bun:test";
+import { __setEmojiRegistryForTests } from "../../src/interface/telegram/engine/messages/custom-emoji.ts";
 import {
   dismissActiveModal,
   dismissModalsInScope,
@@ -26,8 +27,22 @@ import { StubBotApi } from "../fixtures/stub-bot-api.ts";
  * we can assert side-effects without touching grammY.
  */
 
+// Pin the registry to plain glyphs so assertions stay stable even when
+// `TG_CUSTOM_EMOJI_*` vars are set in the surrounding environment.
+afterEach(() => {
+  __setEmojiRegistryForTests(null);
+});
+
+const FALLBACKS = {
+  success: { id: "", fallback: "✅" },
+  warning: { id: "", fallback: "⚠️" },
+  error: { id: "", fallback: "❌" },
+  "modal-lock": { id: "", fallback: "⏳" },
+} as const;
+
 describe("send", () => {
   test("plain INFO ephemeral builds a tracked message with icon prefix", async () => {
+    __setEmojiRegistryForTests({ success: FALLBACKS.success });
     const api = new StubBotApi();
     const ctx = await makeCtx(api);
 
@@ -35,7 +50,7 @@ describe("send", () => {
 
     const sent = api.last("sendMessage");
     expect(sent).toBeDefined();
-    expect(sent?.[1]).toBe("✅ hello world");
+    expect(sent?.[1]).toMatch(/^✅ hello world$/);
     expect(tracked.messageId).toBe(100);
     expect(tracked.type).toBe("EPHEMERAL");
     expect(tracked.subtype).toBe("INFO");
@@ -49,6 +64,7 @@ describe("send", () => {
 
   test("replacePrevious=true edits the prior matching message", async () => {
     const api = new StubBotApi();
+    __setEmojiRegistryForTests({ success: FALLBACKS.success });
     const ctx = await makeCtx(api);
 
     await send(ctx, "first", {
@@ -75,6 +91,7 @@ describe("send", () => {
 describe("toast", () => {
   test("two consecutive toast.info calls edit a single tracked message", async () => {
     const api = new StubBotApi();
+    __setEmojiRegistryForTests({ success: FALLBACKS.success });
     const ctx = await makeCtx(api);
 
     await toast.info(ctx, "saved");
@@ -84,7 +101,7 @@ describe("toast", () => {
     expect(list.length).toBe(1);
     expect(api.calls("sendMessage").length).toBe(1);
     expect(api.calls("editMessageText").length).toBe(1);
-    expect(api.last("editMessageText")?.[2]).toBe("✅ saved again");
+    expect(api.last("editMessageText")?.[2]).toMatch(/^✅ saved again$/);
   });
 });
 
@@ -199,6 +216,44 @@ describe("modal.confirm", () => {
     expect(list.length).toBe(1);
     expect(list[0]?.type).toBe("INTERACTIVE");
     expect(list[0]?.subtype).toBe("CONFIRMATION");
+  });
+
+  test("body starts with the bare modal-lock glyph when no override id is set", async () => {
+    __setEmojiRegistryForTests({ "modal-lock": FALLBACKS["modal-lock"] });
+    const api = new StubBotApi();
+    const ctx = await makeCtx(api);
+
+    await modal.confirm(ctx, {
+      title: "Leave?",
+      body: "Unsaved work will be discarded.",
+      confirmLabel: "Yes, leave",
+      confirmCallback: "guard:leave",
+    });
+
+    const sent = api.last("sendMessage");
+    const text = sent?.[1] as string;
+    expect(text.startsWith("⏳ <b>")).toBe(true);
+    expect(text).toContain("<b>Leave?</b>");
+  });
+
+  test("body starts with a tg-emoji span when an override id is configured", async () => {
+    __setEmojiRegistryForTests({ "modal-lock": { id: "5368324170671202286", fallback: "⏳" } });
+    const api = new StubBotApi();
+    const ctx = await makeCtx(api);
+
+    await modal.confirm(ctx, {
+      title: "Leave?",
+      body: "Unsaved work will be discarded.",
+      confirmLabel: "Yes, leave",
+      confirmCallback: "guard:leave",
+    });
+
+    const sent = api.last("sendMessage");
+    const text = sent?.[1] as string;
+    expect(text.startsWith('<tg-emoji emoji-id="5368324170671202286">⏳</tg-emoji> <b>')).toBe(
+      true,
+    );
+    expect(text).toContain("<b>Leave?</b>");
   });
 });
 

@@ -47,7 +47,8 @@ export {
   trackMessage,
   untrackMessage,
 } from "./messages/tracking.ts";
-export { escapeHtml } from "./messages/sanitise.ts";
+export { escapeHtml, safeBodyHtml } from "./messages/sanitise.ts";
+export { ce, ceText, type EmojiIntent } from "./messages/custom-emoji.ts";
 
 export { templates } from "./errors/templates.ts";
 export { renderTemplate } from "./errors/render.ts";

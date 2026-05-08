@@ -6,6 +6,7 @@ import {
   type PageDefinition,
   escapeHtml,
 } from "../../../engine/index.ts";
+import { ce } from "../../../engine/messages/custom-emoji.ts";
 
 /**
  * `/settings` — settings root.
@@ -22,7 +23,7 @@ export const settingsRootPage: PageDefinition = {
     const svc = makeSettingsService();
     const cfg = await svc.load();
     const lines = [
-      "<b>⚙ Settings</b>",
+      `${ce("primary")} <b>⚙ Settings</b>`,
       "",
       `Strategic model: <code>${escapeHtml(cfg.models.strategic)}</code>`,
       `Execution model: <code>${escapeHtml(cfg.models.execution)}</code>`,

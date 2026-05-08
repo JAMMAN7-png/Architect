@@ -11,6 +11,7 @@ import {
   escapeHtml,
   navigateTo,
 } from "../engine/index.ts";
+import { ce } from "../engine/messages/custom-emoji.ts";
 import type { MenuRenderer } from "../engine/renderer/menu-renderer.ts";
 import type { SessionStore } from "../engine/session/store.ts";
 import { getArchitectRunner } from "./runner.ts";
@@ -133,7 +134,7 @@ export function makeGatePage(spec: GatePageSpec): PageDefinition {
 
 function gateBody(spec: GatePageSpec, state: ArchitectState): string {
   const lines: string[] = [];
-  lines.push(`<b>${escapeHtml(spec.title)}</b>`);
+  lines.push(`${ce("primary")} <b>${escapeHtml(spec.title)}</b>`);
   lines.push("");
   lines.push(escapeHtml(spec.summarise(state)));
   const artifact = spec.artifactPath(state);

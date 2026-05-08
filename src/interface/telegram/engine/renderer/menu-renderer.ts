@@ -1,3 +1,4 @@
+import { ce } from "../messages/custom-emoji.ts";
 import { escapeHtml } from "../messages/sanitise.ts";
 import { cancelTtlTimer } from "../messages/send.ts";
 import { trackMessage } from "../messages/tracking.ts";
@@ -156,7 +157,7 @@ export class MenuRenderer {
       await this.#renderLocked(
         ctx,
         {
-          body: `⏳ ${escapeHtml(ctx.session.activeModal.title)} is open. Resolve it before continuing.`,
+          body: `${ce("modal-lock")} <i>${escapeHtml(ctx.session.activeModal.title)} is open. Resolve it before continuing.</i>`,
           cancelData: "action:engine:modal:cancel",
         },
         retried,
@@ -167,7 +168,7 @@ export class MenuRenderer {
       await this.#renderLocked(
         ctx,
         {
-          body: "⏳ Waiting for your input. Send the value as a message, or tap Cancel.",
+          body: `${ce("flow-lock")} <i>Waiting for your input. Send the value as a message, or tap Cancel.</i>`,
           cancelData: "action:engine:flow:cancel",
         },
         retried,
