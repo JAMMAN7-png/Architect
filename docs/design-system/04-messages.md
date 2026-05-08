@@ -239,9 +239,41 @@ Telegram supports per-message custom emoji via the `<tg-emoji emoji-id="…">fal
 
 `safeBodyHtml(s)` enforces only Telegram-supported tags (`b, i, u, s, code, pre, a, br, tg-emoji`). Use it as a guard at the send boundary when composing trusted fragments.
 
-### Buttons stay plain
+### Buttons (Bot API 9.4)
 
-Button labels MUST be plain text + static glyphs only. Custom emojis only render in message bodies.
+Bot API 9.4 added two button-level fields to `InlineKeyboardButton`:
+
+- **`icon_custom_emoji_id`** — populates the leading badge on a
+  button. Independent of the `text` field; the icon renders before the
+  label and is shown only to clients that support custom emoji
+  (Premium entitlement applies). Non-Premium clients see the button
+  without the icon, so the `text` label MUST remain self-sufficient
+  (do not move semantic content into the icon).
+- **`style`** — colors the button. Values: `"danger"` (red),
+  `"success"` (green), `"primary"` (blue). Omitted → default grey.
+
+Both fields are plain JSON in the keyboard payload — no HTML, no
+`<tg-emoji>` shenanigans. Use the `btn()` helper from
+`engine/keyboard.ts` to compose buttons with both fields:
+
+```typescript
+import { btn } from '@/interface/telegram/engine/keyboard.ts';
+
+btn('Approve', { intent: 'approve', style: 'success', callback_data: 'foo' });
+// → { text: 'Approve', icon_custom_emoji_id: '<id>', style: 'success', callback_data: 'foo' }
+```
+
+`intent` resolves through the same env-driven registry as `ce()` — when
+no id is configured the field is omitted entirely (so the rendered
+button is byte-identical to the pre-9.4 shape).
+
+### Buttons stay plain (legacy guidance)
+
+The `text` field of an inline-keyboard button is still plain text;
+Telegram does NOT parse HTML there. Static glyphs (or the resolved
+`ceText(intent)`) are fine; `<tg-emoji>` markup is NOT — it leaks as
+literal characters and burns the 64-byte cap. For per-button custom
+emoji, use `icon_custom_emoji_id` (above), not the text field.
 
 ## TTL discipline (auto-vanish)
 

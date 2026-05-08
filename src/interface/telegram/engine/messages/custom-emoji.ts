@@ -21,6 +21,7 @@
 import { escapeHtml } from "./sanitise.ts";
 
 export type EmojiIntent =
+  // Core (pre Bot API 9.4)
   | "success"
   | "error"
   | "warning"
@@ -31,7 +32,35 @@ export type EmojiIntent =
   | "continue"
   | "modal-lock"
   | "flow-lock"
-  | "loading";
+  | "loading"
+  // Bot API 9.4 button glyphs
+  | "settings"
+  | "models"
+  | "search"
+  | "llm"
+  | "runtime"
+  | "brainstorm"
+  | "output"
+  | "new"
+  | "open"
+  | "restart"
+  | "status"
+  | "review"
+  | "capture"
+  | "revise"
+  | "reject"
+  | "approve"
+  | "back"
+  | "cancel"
+  | "selected"
+  | "unselected"
+  | "toggle-on"
+  | "toggle-off"
+  | "page-prev"
+  | "page-next"
+  | "ping"
+  | "healthy"
+  | "unhealthy";
 
 export interface CustomEmojiSpec {
   id: string;
@@ -50,6 +79,33 @@ const FALLBACK: Record<EmojiIntent, string> = {
   "modal-lock": "⏳",
   "flow-lock": "⌨️",
   loading: "🔄",
+  settings: "⚙",
+  models: "🧠",
+  search: "🔍",
+  llm: "🔌",
+  runtime: "⏱",
+  brainstorm: "💡",
+  output: "📦",
+  new: "🆕",
+  open: "📂",
+  restart: "🔄",
+  status: "🔍",
+  review: "✍",
+  capture: "📝",
+  revise: "🔁",
+  reject: "❌",
+  approve: "✅",
+  back: "⬅",
+  cancel: "×",
+  selected: "⭐",
+  unselected: "▫",
+  "toggle-on": "🟢",
+  "toggle-off": "⚪",
+  "page-prev": "◀",
+  "page-next": "▶",
+  ping: "🩺",
+  healthy: "💚",
+  unhealthy: "💔",
 };
 
 const envKey = (intent: EmojiIntent): string => {

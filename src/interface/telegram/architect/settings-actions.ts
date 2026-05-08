@@ -1,6 +1,9 @@
 import type { Bot, Context as GrammyContext } from "grammy";
+import type { ArchitectConfig } from "../../../config/schema.ts";
 import { LLM_PROVIDERS, SEARCH_PROVIDERS, makeSettingsService } from "../../../config/service.ts";
+import { listAllDynamicModels } from "../../../llm/dynamic-models.ts";
 import { listKnownModels } from "../../../llm/models.ts";
+import { LLMRouter } from "../../../llm/router.ts";
 import {
   type Ctx,
   DopellerError,
@@ -16,12 +19,19 @@ import type { ActionDeps } from "./actions.ts";
 /**
  * grammY action handlers for `action:settings:*` callbacks.
  *
- * Three callback shapes:
+ * Five callback shapes:
  *   - `action:settings:toggle:<dottedKey>:<member>` — flip list membership.
  *   - `action:settings:set:<dottedKey>:<value>`     — set scalar / enum / bool.
  *   - `action:settings:edit:<dottedKey>`            — start the host page's
  *      input flow with `editingKey` stashed in `pageData`; on completion
  *      the flow's `onComplete` reads that key and applies the value.
+ *   - `action:settings:ping:<dottedKey>:idx:<n>`    — health-check the model
+ *      at index `n` of the live dynamic-models snapshot.
+ *   - `action:settings:page:<dottedKey>:<n>`        — bump the host page's
+ *      pagination cursor in `session.pageData[currentPage].page`.
+ *
+ * Plus a `noop:*` matcher used to silence the spinner on header /
+ * indicator buttons that have no behavior of their own.
  *
  * Every handler owns its own session lifecycle (load + save) since
  * `bot.callbackQuery(...)` short-circuits the engine pipeline.
@@ -30,6 +40,8 @@ import type { ActionDeps } from "./actions.ts";
 const TOGGLE_RE = /^action:settings:toggle:([^:]+):(.+)$/;
 const SET_RE = /^action:settings:set:([^:]+):(.+)$/;
 const EDIT_RE = /^action:settings:edit:(.+)$/;
+const PING_RE = /^action:settings:ping:([^:]+):idx:(\d+)$/;
+const PAGE_RE = /^action:settings:page:([^:]+):(\d+)$/;
 
 const SCALAR_FIELD = "value";
 
@@ -37,6 +49,15 @@ export function registerSettingsActions(bot: Bot, deps: ActionDeps): void {
   bot.callbackQuery(TOGGLE_RE, makeToggleHandler(deps));
   bot.callbackQuery(SET_RE, makeSetHandler(deps));
   bot.callbackQuery(EDIT_RE, makeEditHandler(deps));
+  bot.callbackQuery(PING_RE, makePingHandler(deps));
+  bot.callbackQuery(PAGE_RE, makePageHandler(deps));
+  bot.callbackQuery(/^noop:/, async (gctx) => {
+    try {
+      await gctx.answerCallbackQuery();
+    } catch {
+      // Telegram rejects acks for queries already answered or expired.
+    }
+  });
 }
 
 // ── Handlers ─────────────────────────────────────────────────────────
@@ -60,7 +81,7 @@ function makeToggleHandler(deps: ActionDeps): (gctx: GrammyContext) => Promise<v
       let member = m[2] ?? "";
       if (member.startsWith("idx:")) {
         const idx = Number.parseInt(member.slice(4), 10);
-        const resolved = resolveIndexed(key, idx);
+        const resolved = await resolveIndexedAsync(key, idx);
         if (resolved === null) {
           await toast.danger(ctx, "Unknown option.");
           await deps.store.save(ctx.session);
@@ -105,7 +126,7 @@ function makeSetHandler(deps: ActionDeps): (gctx: GrammyContext) => Promise<void
       let raw = m[2] ?? "";
       if (raw.startsWith("idx:")) {
         const idx = Number.parseInt(raw.slice(4), 10);
-        const resolved = resolveIndexed(key, idx);
+        const resolved = await resolveIndexedAsync(key, idx);
         if (resolved === null) {
           await toast.danger(ctx, "Unknown option.");
           await deps.store.save(ctx.session);
@@ -164,6 +185,117 @@ function makeEditHandler(deps: ActionDeps): (gctx: GrammyContext) => Promise<voi
         await reportFailure(ctx, err);
         await deps.store.save(ctx.session);
       }
+    } finally {
+      await silenceSpinner(gctx);
+    }
+  };
+}
+
+// ── Router factory test seam ─────────────────────────────────────────
+
+/**
+ * Health-check uses a tiny indirection so unit tests can substitute a
+ * stub router without forking the action handler.
+ */
+export interface PingRouter {
+  ping(modelId: string): Promise<{ ok: boolean; latencyMs: number; error?: string }>;
+}
+
+type RouterFactory = (cfg: ArchitectConfig) => PingRouter;
+
+const defaultRouterFactory: RouterFactory = (cfg) => new LLMRouter(cfg);
+
+let routerFactory: RouterFactory = defaultRouterFactory;
+
+/**
+ * Test seam — substitute the {@link LLMRouter} factory used by the
+ * health-check handler. Pass `null` to reset.
+ */
+export function __setRouterFactoryForTests(factory: RouterFactory | null): void {
+  routerFactory = factory ?? defaultRouterFactory;
+}
+
+function makePingHandler(deps: ActionDeps): (gctx: GrammyContext) => Promise<void> {
+  return async (gctx) => {
+    const ctx = await loadCtx(gctx, deps);
+    if (ctx === null) {
+      await silenceSpinner(gctx);
+      return;
+    }
+    try {
+      const data = gctx.callbackQuery?.data ?? "";
+      const m = PING_RE.exec(data);
+      if (m === null) {
+        throw new DopellerError("internal_db_unavailable", "internal", "bad_settings_action", {
+          data,
+        });
+      }
+      const idx = Number.parseInt(m[2] ?? "", 10);
+      const all = await listAllDynamicModels();
+      const target = all[idx];
+      if (target === undefined) {
+        await toast.danger(ctx, "Unknown model.");
+        await deps.store.save(ctx.session);
+        return;
+      }
+      try {
+        await toast.info(ctx, `🩺 Pinging <code>${escapeHtml(target.slug)}</code>…`);
+        const svc = makeSettingsService();
+        const cfg = await svc.load();
+        const router = routerFactory(cfg);
+        const r = await router.ping(target.slug);
+        if (r.ok) {
+          await toast.info(
+            ctx,
+            `💚 <code>${escapeHtml(target.slug)}</code> healthy in ${r.latencyMs} ms`,
+          );
+        } else {
+          await toast.danger(
+            ctx,
+            `💔 <code>${escapeHtml(target.slug)}</code> failed: ${escapeHtml(r.error ?? "unknown")}`,
+          );
+        }
+      } catch (err) {
+        await reportFailure(ctx, err);
+      }
+      await deps.store.save(ctx.session);
+    } finally {
+      await silenceSpinner(gctx);
+    }
+  };
+}
+
+function makePageHandler(deps: ActionDeps): (gctx: GrammyContext) => Promise<void> {
+  return async (gctx) => {
+    const ctx = await loadCtx(gctx, deps);
+    if (ctx === null) {
+      await silenceSpinner(gctx);
+      return;
+    }
+    try {
+      const data = gctx.callbackQuery?.data ?? "";
+      const m = PAGE_RE.exec(data);
+      if (m === null) {
+        throw new DopellerError("internal_db_unavailable", "internal", "bad_settings_action", {
+          data,
+        });
+      }
+      const n = Number.parseInt(m[2] ?? "", 10);
+      if (!Number.isFinite(n) || n < 0) {
+        await toast.danger(ctx, "Bad page number.");
+        await deps.store.save(ctx.session);
+        return;
+      }
+      const pagePath = ctx.session.menu.currentPage;
+      const bucket = ctx.session.pageData[pagePath] ?? {};
+      bucket.page = n;
+      ctx.session.pageData[pagePath] = bucket;
+      try {
+        await deps.renderer.rerender(ctx);
+      } catch (err) {
+        await reportFailure(ctx, err);
+      }
+      await deps.store.save(ctx.session);
     } finally {
       await silenceSpinner(gctx);
     }
@@ -302,8 +434,9 @@ async function saveSessionViaServices(ctx: Ctx): Promise<void> {
 
 /**
  * Map a settings key to its ordered candidate slug list. The same list
- * MUST back the page's keyboard so `idx` round-trips. Adding a new
- * indexed key requires updating both the page and {@link candidatesFor}.
+ * MUST back the page's keyboard so `idx` round-trips. For `models.*`
+ * keys the dynamic snapshot is authoritative — see
+ * {@link dynamicCandidatesFor}.
  */
 function candidatesFor(key: string): readonly string[] {
   if (
@@ -320,9 +453,23 @@ function candidatesFor(key: string): readonly string[] {
   return [];
 }
 
-function resolveIndexed(key: string, idx: number): string | null {
+/**
+ * Async candidate resolver. For `models.*` keys returns the live
+ * dynamic-models snapshot so toggle / set / ping callbacks resolve
+ * against the same enumeration the page just rendered. Falls back to
+ * {@link candidatesFor} for non-model keys.
+ */
+async function dynamicCandidatesFor(key: string): Promise<readonly string[]> {
+  if (key.startsWith("models.")) {
+    const all = await listAllDynamicModels();
+    return all.map((m) => m.slug);
+  }
+  return candidatesFor(key);
+}
+
+async function resolveIndexedAsync(key: string, idx: number): Promise<string | null> {
   if (!Number.isFinite(idx)) return null;
-  const candidates = candidatesFor(key);
+  const candidates = await dynamicCandidatesFor(key);
   if (idx < 0 || idx >= candidates.length) return null;
   return candidates[idx] ?? null;
 }
@@ -330,4 +477,14 @@ function resolveIndexed(key: string, idx: number): string | null {
 /** Exported for pages to use the same enumeration when building keyboards. */
 export function settingsCandidates(key: string): readonly string[] {
   return candidatesFor(key);
+}
+
+/**
+ * Async variant — for `models.*` keys returns the live dynamic-models
+ * snapshot. Pages whose keyboard is paginated against the dynamic list
+ * SHOULD use this so set/toggle/ping callbacks round-trip through the
+ * same enumeration the keyboard just rendered.
+ */
+export async function settingsCandidatesAsync(key: string): Promise<readonly string[]> {
+  return dynamicCandidatesFor(key);
 }

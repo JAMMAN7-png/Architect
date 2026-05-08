@@ -3,6 +3,7 @@ import {
   type InlineKeyboardButton,
   type MenuBody,
   type PageDefinition,
+  btn,
   escapeHtml,
 } from "../../engine/index.ts";
 import { GATE_PATHS } from "../actions.ts";
@@ -32,7 +33,7 @@ export const statusPage: PageDefinition = {
     return { text: statusBody(state), parseMode: "HTML" };
   },
   async keyboard(ctx: Ctx): Promise<InlineKeyboardButton[][]> {
-    const back: InlineKeyboardButton = { text: "← Back", callback_data: "nav:/" };
+    const back: InlineKeyboardButton = btn("⬅ Back", { intent: "back", callback_data: "nav:/" });
     const projectRoot = ctx.session.projectRoot;
     if (projectRoot === null) return [[back]];
 
@@ -43,7 +44,16 @@ export const statusPage: PageDefinition = {
     const pending = runner.pendingGate(state);
     if (pending === null) return [[back]];
 
-    return [[{ text: "✍️ Review Pending", callback_data: `nav:${GATE_PATHS[pending]}` }], [back]];
+    return [
+      [
+        btn("✍️ Review Pending", {
+          intent: "review",
+          style: "primary",
+          callback_data: `nav:${GATE_PATHS[pending]}`,
+        }),
+      ],
+      [back],
+    ];
   },
 };
 

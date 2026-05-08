@@ -4,6 +4,7 @@ import {
   type InlineKeyboardButton,
   type MenuBody,
   type PageDefinition,
+  btn,
   escapeHtml,
 } from "../../../engine/index.ts";
 import { indexedSettingsCallback } from "../../../engine/router/callback.ts";
@@ -49,42 +50,45 @@ export const settingsSearchPage: PageDefinition = {
     const rows: InlineKeyboardButton[][] = [];
     for (let i = 0; i < toggleProviders.length; i++) {
       const id = toggleProviders[i] ?? "";
-      const icon = enabled.has(id) ? "🟢" : "⚪";
+      const on = enabled.has(id);
       rows.push([
-        {
-          text: `${icon} ${id}`,
+        btn(`${on ? "🟢" : "⚪"} ${id}`, {
+          intent: on ? "toggle-on" : "toggle-off",
           callback_data: indexedSettingsCallback("toggle", "search.enabled_providers", i),
-        },
+        }),
       ]);
     }
     const primaryRow: InlineKeyboardButton[] = [];
     for (let i = 0; i < primaryProviders.length; i++) {
       const id = primaryProviders[i] ?? "";
-      primaryRow.push({
-        text: `${id === cfg.search.provider ? "⭐" : "▫"} ${id}`,
-        callback_data: indexedSettingsCallback("set", "search.provider", i),
-      });
+      const isPrimary = id === cfg.search.provider;
+      primaryRow.push(
+        btn(`${isPrimary ? "⭐" : "▫"} ${id}`, {
+          intent: isPrimary ? "selected" : "unselected",
+          callback_data: indexedSettingsCallback("set", "search.provider", i),
+        }),
+      );
     }
     rows.push(primaryRow);
     rows.push([
-      {
-        text: `✏ Noise filter (${cfg.search.noise_filter})`,
+      btn(`✏ Noise filter (${cfg.search.noise_filter})`, {
+        intent: "edit",
         callback_data: "action:settings:edit:search.noise_filter",
-      },
+      }),
     ]);
     rows.push([
-      {
-        text: `✏ Per-query cap (${cfg.search.per_query_cap})`,
+      btn(`✏ Per-query cap (${cfg.search.per_query_cap})`, {
+        intent: "edit",
         callback_data: "action:settings:edit:search.per_query_cap",
-      },
+      }),
     ]);
     rows.push([
-      {
-        text: `✏ Base URL (${cfg.search.base_url || "default"})`,
+      btn(`✏ Base URL (${cfg.search.base_url || "default"})`, {
+        intent: "edit",
         callback_data: "action:settings:edit:search.base_url",
-      },
+      }),
     ]);
-    rows.push([{ text: "⬅️ Back", callback_data: "nav:/settings" }]);
+    rows.push([btn("⬅ Back", { intent: "back", callback_data: "nav:/settings" })]);
     return rows;
   },
   inputFlow: makeScalarEditorFlow(PAGE_PATH, FLOW_ID),

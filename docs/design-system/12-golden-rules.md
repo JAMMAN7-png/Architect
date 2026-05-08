@@ -100,14 +100,43 @@ callback length from content length.
 sanctioned ways to construct slug-bearing callbacks. See
 [04-messages.md](04-messages.md) §64-byte callback_data invariant.
 
-## 5. Custom emoji belongs in bodies, not buttons
+## 5. Custom emoji on buttons via `icon_custom_emoji_id`, not in `text`
 
-Telegram only parses HTML in **message bodies**. Inline-keyboard `text` fields are plain text, so `<tg-emoji>` does NOT render there. Use `ce(intent)` in `render()` bodies and modal/toast titles; use `ceText(intent)` (or static glyphs) in `keyboard()` rows.
+Bot API 9.4 added `icon_custom_emoji_id` to `InlineKeyboardButton`.
+Use it for the leading icon. **Do not** stuff `<tg-emoji>` HTML into
+`text` — button labels are still plain strings; HTML in there leaks as
+literal characters and can blow the 64-byte cap.
+
+### How
+
+Use the engine helper:
+
+```ts
+import { btn } from "@/interface/telegram/engine/keyboard.ts";
+btn("Approve", { intent: "approve", style: "success", callback_data: "action:foo" });
+```
+
+`intent` populates `icon_custom_emoji_id` from the env-driven registry
+(empty / missing id → field omitted, so non-Premium clients still see
+a clean button). `style` colors the button (`"danger"`/`"success"`/
+`"primary"`).
+
+For message bodies (not buttons), keep using `ce(intent)` to emit the
+`<tg-emoji>` HTML span — that path is unchanged.
 
 ### Why
 
-A `<tg-emoji>` tag inside a button label renders as raw text (`<tg-emoji emoji-id=…`), which both leaks implementation and breaks the 64-byte cap.
+A `<tg-emoji>` tag inside a button label renders as raw text
+(`<tg-emoji emoji-id=…`), which both leaks implementation and breaks
+the 64-byte cap. Bot API 9.4 made the icon a first-class field; use
+it.
 
 ### Enforcement
 
-`src/interface/telegram/engine/messages/custom-emoji.ts` exposes `ce()` and `ceText()` separately so the right shape is unambiguous at every call site. Pages that need a glyph in a button MUST use `ceText` (or a static literal).
+`src/interface/telegram/engine/keyboard.ts` — `btn()` is the only
+sanctioned constructor for buttons that need an intent-driven icon
+or a Bot API 9.4 `style`. Pages MUST go through it for those cases.
+`src/interface/telegram/engine/messages/custom-emoji.ts` keeps `ce()`
+/ `ceText()` separate so message-body and button paths are
+unambiguous at every call site.
+

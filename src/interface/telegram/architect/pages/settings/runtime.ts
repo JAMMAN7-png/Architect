@@ -4,6 +4,7 @@ import {
   type InlineKeyboardButton,
   type MenuBody,
   type PageDefinition,
+  btn,
   escapeHtml,
 } from "../../../engine/index.ts";
 import { makeScalarEditorFlow } from "../../settings-actions.ts";
@@ -33,25 +34,27 @@ export const settingsRuntimePage: PageDefinition = {
   async keyboard(_ctx: Ctx): Promise<InlineKeyboardButton[][]> {
     const svc = makeSettingsService();
     const cfg = await svc.load();
-    const logRow: InlineKeyboardButton[] = LOG_LEVELS.map((lvl) => ({
-      text: `${lvl === cfg.runtime.log_level ? "⭐" : "▫"} ${lvl}`,
-      callback_data: `action:settings:set:runtime.log_level:${lvl}`,
-    }));
+    const logRow: InlineKeyboardButton[] = LOG_LEVELS.map((lvl) =>
+      btn(`${lvl === cfg.runtime.log_level ? "⭐" : "▫"} ${lvl}`, {
+        intent: lvl === cfg.runtime.log_level ? "selected" : "unselected",
+        callback_data: `action:settings:set:runtime.log_level:${lvl}`,
+      }),
+    );
     return [
       logRow,
       [
-        {
-          text: `✏ Retry attempts (${cfg.runtime.retry_attempts})`,
+        btn(`✏ Retry attempts (${cfg.runtime.retry_attempts})`, {
+          intent: "edit",
           callback_data: "action:settings:edit:runtime.retry_attempts",
-        },
+        }),
       ],
       [
-        {
-          text: `✏ Default max tokens (${cfg.runtime.max_tokens_default})`,
+        btn(`✏ Default max tokens (${cfg.runtime.max_tokens_default})`, {
+          intent: "edit",
           callback_data: "action:settings:edit:runtime.max_tokens_default",
-        },
+        }),
       ],
-      [{ text: "⬅️ Back", callback_data: "nav:/settings" }],
+      [btn("⬅️ Back", { intent: "back", callback_data: "nav:/settings" })],
     ];
   },
   inputFlow: makeScalarEditorFlow(PAGE_PATH, FLOW_ID),

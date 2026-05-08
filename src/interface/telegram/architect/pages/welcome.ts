@@ -5,6 +5,7 @@ import {
   type InputFlowDefinition,
   type MenuBody,
   type PageDefinition,
+  btn,
   escapeHtml,
   navigateTo,
   toast,
@@ -65,10 +66,22 @@ export const welcomePage: PageDefinition = {
         ? clampLabel(`🟡 ▶ Continue at ${pendingGate}`)
         : clampLabel("🟢 ✅ View Status");
     return [
-      [{ text: continueLabel, callback_data: "action:architect:continue" }],
-      [{ text: "🔍 Status", callback_data: "nav:/status" }],
-      [{ text: "🔄 Reset Project", callback_data: "action:architect:reset" }],
-      [{ text: "⚙ Settings", callback_data: "nav:/settings" }],
+      [
+        btn(continueLabel, {
+          intent: "continue",
+          style: "primary",
+          callback_data: "action:architect:continue",
+        }),
+      ],
+      [btn("🔎 Status", { intent: "status", callback_data: "nav:/status" })],
+      [
+        btn("🔄 Reset Project", {
+          intent: "restart",
+          style: "danger",
+          callback_data: "action:architect:reset",
+        }),
+      ],
+      [btn("⚙ Settings", { intent: "settings", callback_data: "nav:/settings" })],
     ];
   },
   inputFlow: makeNewProjectFlow(),
@@ -194,10 +207,14 @@ function getNavDeps(ctx: Ctx): {
 function unboundKeyboard(): InlineKeyboardButton[][] {
   return [
     [
-      { text: "🆕 New Project", callback_data: "action:architect:new" },
-      { text: "📦 Open Project", callback_data: "action:architect:open" },
+      btn("🆕 New Project", {
+        intent: "new",
+        style: "success",
+        callback_data: "action:architect:new",
+      }),
+      btn("📂 Open Project", { intent: "open", callback_data: "action:architect:open" }),
     ],
-    [{ text: "⚙ Settings", callback_data: "nav:/settings" }],
+    [btn("⚙ Settings", { intent: "settings", callback_data: "nav:/settings" })],
   ];
 }
 

@@ -9,6 +9,7 @@ import {
   type MenuBody,
   type PageDefinition,
   type PageRegistry,
+  btn,
   escapeHtml,
   navigateTo,
 } from "../../engine/index.ts";
@@ -145,7 +146,7 @@ export const sparkPage: PageDefinition = {
   },
 
   async keyboard(ctx: Ctx): Promise<InlineKeyboardButton[][]> {
-    const back: InlineKeyboardButton = { text: "← Back", callback_data: "nav:/" };
+    const back = btn("⬅ Back", { intent: "back", callback_data: "nav:/" });
     const projectRoot = ctx.session.projectRoot;
     if (projectRoot === null) return [[back]];
 
@@ -155,15 +156,36 @@ export const sparkPage: PageDefinition = {
 
     if (runner.pendingGate(state) === "G1") {
       return [
-        [{ text: "✅ Approve", callback_data: "action:architect:approve" }],
-        [{ text: "✏️ Edit", callback_data: "action:architect:edit" }],
-        [{ text: "🔁 Revise", callback_data: "action:architect:revise" }],
-        [{ text: "❌ Reject", callback_data: "action:architect:reject" }],
+        [
+          btn("✅ Approve", {
+            intent: "approve",
+            style: "success",
+            callback_data: "action:architect:approve",
+          }),
+        ],
+        [btn("✏️ Edit", { intent: "edit", callback_data: "action:architect:edit" })],
+        [btn("🔁 Revise", { intent: "revise", callback_data: "action:architect:revise" })],
+        [
+          btn("❌ Reject", {
+            intent: "reject",
+            style: "danger",
+            callback_data: "action:architect:reject",
+          }),
+        ],
         [back],
       ];
     }
 
-    return [[{ text: "📝 Capture spark", callback_data: ACTION_BEGIN }], [back]];
+    return [
+      [
+        btn("📝 Capture spark", {
+          intent: "capture",
+          style: "primary",
+          callback_data: ACTION_BEGIN,
+        }),
+      ],
+      [back],
+    ];
   },
 };
 

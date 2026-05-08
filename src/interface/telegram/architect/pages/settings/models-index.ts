@@ -4,6 +4,7 @@ import {
   type InlineKeyboardButton,
   type MenuBody,
   type PageDefinition,
+  btn,
   escapeHtml,
 } from "../../../engine/index.ts";
 
@@ -33,31 +34,31 @@ export const settingsModelsIndexPage: PageDefinition = {
     const cfg = await svc.load();
     return [
       [
-        {
-          text: `Strategic: ${cfg.models.strategic}`,
+        btn(`Strategic: ${cfg.models.strategic}`, {
+          intent: "models",
           callback_data: "nav:/settings/models/strategic",
-        },
+        }),
       ],
       [
-        {
-          text: `Execution: ${cfg.models.execution}`,
+        btn(`Execution: ${cfg.models.execution}`, {
+          intent: "models",
           callback_data: "nav:/settings/models/execution",
-        },
+        }),
       ],
-      [{ text: `UI: ${cfg.models.ui}`, callback_data: "nav:/settings/models/ui" }],
+      [btn(`UI: ${cfg.models.ui}`, { intent: "models", callback_data: "nav:/settings/models/ui" })],
       [
-        {
-          text: `Fallback: ${cfg.models.fallback}`,
+        btn(`Fallback: ${cfg.models.fallback}`, {
+          intent: "models",
           callback_data: "nav:/settings/models/fallback",
-        },
+        }),
       ],
       [
-        {
-          text: `Ensemble: ${cfg.models.ensemble.length} models`,
+        btn(`Ensemble: ${cfg.models.ensemble.length} models`, {
+          intent: "models",
           callback_data: "nav:/settings/models/ensemble",
-        },
+        }),
       ],
-      [{ text: "⬅️ Back", callback_data: "nav:/settings" }],
+      [btn("⬅ Back", { intent: "back", callback_data: "nav:/settings" })],
     ];
   },
 };

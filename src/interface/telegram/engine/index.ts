@@ -13,6 +13,7 @@ export type {
   Ctx,
   GateId,
   InlineKeyboardButton,
+  InlineKeyboardButtonStyle,
   InlineKeyboardMarkup,
   InputFlowDefinition,
   InputFlowState,
@@ -49,6 +50,7 @@ export {
 } from "./messages/tracking.ts";
 export { escapeHtml, safeBodyHtml } from "./messages/sanitise.ts";
 export { ce, ceText, type EmojiIntent } from "./messages/custom-emoji.ts";
+export { btn, type ButtonOptions } from "./keyboard.ts";
 
 export { templates } from "./errors/templates.ts";
 export { renderTemplate } from "./errors/render.ts";

@@ -11,6 +11,7 @@ import {
   escapeHtml,
   navigateTo,
 } from "../engine/index.ts";
+import { btn } from "../engine/index.ts";
 import { ce } from "../engine/messages/custom-emoji.ts";
 import type { MenuRenderer } from "../engine/renderer/menu-renderer.ts";
 import type { SessionStore } from "../engine/session/store.ts";
@@ -116,10 +117,22 @@ export function makeGatePage(spec: GatePageSpec): PageDefinition {
       if (pending !== spec.gate) return [back];
 
       return [
-        [{ text: "🟢 ✅ Approve", callback_data: "action:architect:approve" }],
-        [{ text: "✏ Edit", callback_data: "action:architect:edit" }],
-        [{ text: "🟡 🔁 Revise", callback_data: "action:architect:revise" }],
-        [{ text: "🛑 ❌ Reject", callback_data: "action:architect:reject" }],
+        [
+          btn("✅ Approve", {
+            intent: "approve",
+            style: "success",
+            callback_data: "action:architect:approve",
+          }),
+        ],
+        [btn("✏ Edit", { intent: "edit", callback_data: "action:architect:edit" })],
+        [btn("🔁 Revise", { intent: "revise", callback_data: "action:architect:revise" })],
+        [
+          btn("❌ Reject", {
+            intent: "reject",
+            style: "danger",
+            callback_data: "action:architect:reject",
+          }),
+        ],
         back,
       ];
     },
@@ -162,9 +175,9 @@ function missingProjectBody(spec: GatePageSpec): string {
 
 function backRow(parent: string | null): InlineKeyboardButton[] {
   if (parent === null) {
-    return [{ text: "← Back", callback_data: "nav:/" }];
+    return [btn("⬅ Back", { intent: "back", callback_data: "nav:/" })];
   }
-  return [{ text: "← Back", callback_data: "nav:back" }];
+  return [btn("⬅ Back", { intent: "back", callback_data: "nav:back" })];
 }
 
 /**

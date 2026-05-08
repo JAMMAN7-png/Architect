@@ -4,6 +4,7 @@ import {
   type InlineKeyboardButton,
   type MenuBody,
   type PageDefinition,
+  btn,
   escapeHtml,
 } from "../../../engine/index.ts";
 import { makeScalarEditorFlow } from "../../settings-actions.ts";
@@ -35,24 +36,24 @@ export const settingsBrainstormPage: PageDefinition = {
     const cfg = await svc.load();
     return [
       [
-        {
-          text: `✏ Source (${cfg.brainstorm.source})`,
+        btn(`✏ Source (${cfg.brainstorm.source})`, {
+          intent: "edit",
           callback_data: "action:settings:edit:brainstorm.source",
-        },
+        }),
       ],
       [
-        {
-          text: `✏ Ref (${cfg.brainstorm.ref})`,
+        btn(`✏ Ref (${cfg.brainstorm.ref})`, {
+          intent: "edit",
           callback_data: "action:settings:edit:brainstorm.ref",
-        },
+        }),
       ],
       [
-        {
-          text: `✏ Cache TTL (${cfg.brainstorm.cache_ttl})`,
+        btn(`✏ Cache TTL (${cfg.brainstorm.cache_ttl})`, {
+          intent: "edit",
           callback_data: "action:settings:edit:brainstorm.cache_ttl",
-        },
+        }),
       ],
-      [{ text: "⬅️ Back", callback_data: "nav:/settings" }],
+      [btn("⬅️ Back", { intent: "back", callback_data: "nav:/settings" })],
     ];
   },
   inputFlow: makeScalarEditorFlow(PAGE_PATH, FLOW_ID),

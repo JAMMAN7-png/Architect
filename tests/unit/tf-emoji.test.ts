@@ -1,8 +1,10 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import {
+  type EmojiIntent,
   __setEmojiRegistryForTests,
   ce,
   ceText,
+  getEmojiSpec,
 } from "../../src/interface/telegram/engine/messages/custom-emoji.ts";
 import { safeBodyHtml } from "../../src/interface/telegram/engine/messages/sanitise.ts";
 
@@ -53,5 +55,35 @@ describe("safeBodyHtml()", () => {
 
   test("throws on disallowed tags", () => {
     expect(() => safeBodyHtml("<script>x</script>")).toThrow(/<script>/);
+  });
+});
+
+describe("Bot API 9.4 button-glyph intents", () => {
+  const cases: ReadonlyArray<readonly [EmojiIntent, string]> = [
+    ["settings", "⚙"],
+    ["models", "🧠"],
+    ["search", "🔍"],
+    ["llm", "🔌"],
+    ["runtime", "⏱"],
+    ["brainstorm", "💡"],
+    ["output", "📦"],
+    ["restart", "🔄"],
+    ["back", "⬅"],
+  ];
+
+  for (const [intent, glyph] of cases) {
+    test(`getEmojiSpec(${intent}).fallback === ${glyph}`, () => {
+      expect(getEmojiSpec(intent).fallback).toBe(glyph);
+    });
+  }
+
+  test("ce('settings') with empty id → bare glyph", () => {
+    __setEmojiRegistryForTests({ settings: { id: "", fallback: "⚙" } });
+    expect(ce("settings")).toBe("⚙");
+  });
+
+  test("ce('settings') with override id → <tg-emoji> span", () => {
+    __setEmojiRegistryForTests({ settings: { id: "5555", fallback: "⚙" } });
+    expect(ce("settings")).toBe('<tg-emoji emoji-id="5555">⚙</tg-emoji>');
   });
 });

@@ -4,6 +4,7 @@ import {
   type InlineKeyboardButton,
   type MenuBody,
   type PageDefinition,
+  btn,
   escapeHtml,
 } from "../../../engine/index.ts";
 import { ce } from "../../../engine/messages/custom-emoji.ts";
@@ -37,18 +38,18 @@ export const settingsRootPage: PageDefinition = {
   keyboard(_ctx: Ctx): InlineKeyboardButton[][] {
     return [
       [
-        { text: "🧠 Models", callback_data: "nav:/settings/models" },
-        { text: "🔍 Search", callback_data: "nav:/settings/search" },
+        btn("🧠 Models", { intent: "models", callback_data: "nav:/settings/models" }),
+        btn("🔍 Search", { intent: "search", callback_data: "nav:/settings/search" }),
       ],
       [
-        { text: "🔌 LLM Providers", callback_data: "nav:/settings/llm" },
-        { text: "⏱ Runtime", callback_data: "nav:/settings/runtime" },
+        btn("🔌 LLM Providers", { intent: "llm", callback_data: "nav:/settings/llm" }),
+        btn("⏱ Runtime", { intent: "runtime", callback_data: "nav:/settings/runtime" }),
       ],
       [
-        { text: "💡 Brainstorm", callback_data: "nav:/settings/brainstorm" },
-        { text: "📦 Output", callback_data: "nav:/settings/output" },
+        btn("💡 Brainstorm", { intent: "brainstorm", callback_data: "nav:/settings/brainstorm" }),
+        btn("📦 Output", { intent: "output", callback_data: "nav:/settings/output" }),
       ],
-      [{ text: "⬅️ Back", callback_data: "nav:/" }],
+      [btn("⬅️ Back", { intent: "back", callback_data: "nav:/" })],
     ];
   },
 };

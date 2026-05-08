@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { LLM_PROVIDERS, SEARCH_PROVIDERS } from "../../src/config/service.ts";
 import {
   architectPages,
@@ -9,7 +9,11 @@ import {
 } from "../../src/interface/telegram/architect/pages/index.ts";
 import type { Ctx, InlineKeyboardButton } from "../../src/interface/telegram/engine/index.ts";
 import { CALLBACK_DATA_MAX_BYTES } from "../../src/interface/telegram/engine/router/callback.ts";
-import { listKnownModels } from "../../src/llm/models.ts";
+import {
+  type DynamicModel,
+  __setDynamicModelCacheForTests,
+  clearDynamicModelCache,
+} from "../../src/llm/dynamic-models.ts";
 import { makeCtx } from "../fixtures/make-ctx.ts";
 import { StubBotApi } from "../fixtures/stub-bot-api.ts";
 
@@ -26,6 +30,52 @@ const ENCODER = new TextEncoder();
 
 function flatten(rows: InlineKeyboardButton[][]): InlineKeyboardButton[] {
   return rows.reduce<InlineKeyboardButton[]>((acc, row) => acc.concat(row), []);
+}
+
+/**
+ * Deterministic dynamic-models seed used by the model-tier tests below.
+ * `listAllDynamicModels` filters providers by env-key presence, so we
+ * also stamp `OPENAI_API_KEY` for the duration of each test and clear
+ * the cache afterwards.
+ */
+const SEEDED_OPENAI: DynamicModel[] = [
+  { slug: "openai/gpt-a", provider: "openai", apiId: "gpt-a" },
+  { slug: "openai/gpt-b", provider: "openai", apiId: "gpt-b" },
+  { slug: "openai/gpt-c", provider: "openai", apiId: "gpt-c" },
+];
+
+const MODEL_ENV_KEYS = [
+  "ANTHROPIC_API_KEY",
+  "OPENAI_API_KEY",
+  "XAI_API_KEY",
+  "DEEPSEEK_API_KEY",
+  "OPENROUTER_API_KEY",
+  "VERCEL_AI_GATEWAY_API_KEY",
+  "CEREBRAS_API_KEY",
+  "GROQ_API_KEY",
+  "NVIDIA_API_KEY",
+  "OPENCODE_ZEN_API_KEY",
+  "OPENCODE_GO_API_KEY",
+] as const;
+const SAVED_MODEL_ENV: Record<string, string | undefined> = {};
+
+function seedOpenAIModels(): void {
+  for (const k of MODEL_ENV_KEYS) {
+    SAVED_MODEL_ENV[k] = process.env[k];
+    delete process.env[k];
+  }
+  process.env.OPENAI_API_KEY = "test-key";
+  clearDynamicModelCache();
+  __setDynamicModelCacheForTests("openai", SEEDED_OPENAI);
+}
+
+function restoreModelEnv(): void {
+  for (const k of MODEL_ENV_KEYS) {
+    const v = SAVED_MODEL_ENV[k];
+    if (v === undefined) delete process.env[k];
+    else process.env[k] = v;
+  }
+  clearDynamicModelCache();
 }
 
 describe("settingsRootPage", () => {
@@ -47,15 +97,17 @@ describe("settingsRootPage", () => {
 });
 
 describe("makeModelTierPage('strategic')", () => {
-  test("keyboard contains an indexed `set` callback exactly once for each slug", async () => {
+  beforeEach(() => seedOpenAIModels());
+  afterEach(() => restoreModelEnv());
+
+  test("keyboard contains an indexed `set` callback exactly once for each dynamic model", async () => {
     const page = makeModelTierPage("strategic");
     const ctx = await makeCtx(new StubBotApi());
     const rows = await page.keyboard(ctx);
     const callbacks = flatten(rows)
       .map((b) => b.callback_data)
       .filter((c): c is string => typeof c === "string");
-    const slugs = listKnownModels();
-    for (let i = 0; i < slugs.length; i++) {
+    for (let i = 0; i < SEEDED_OPENAI.length; i++) {
       const expected = `action:settings:set:models.strategic:idx:${i}`;
       const matches = callbacks.filter((c) => c === expected);
       expect(matches.length).toBe(1);
@@ -72,6 +124,9 @@ describe("makeModelTierPage('strategic')", () => {
 });
 
 describe("makeModelTierPage('ensemble')", () => {
+  beforeEach(() => seedOpenAIModels());
+  afterEach(() => restoreModelEnv());
+
   test("ensemble toggle rows use the canonical 🟢/⚪ palette", async () => {
     const page = makeModelTierPage("ensemble");
     const ctx = await makeCtx(new StubBotApi());
@@ -140,6 +195,9 @@ describe("settingsLlmPage", () => {
 });
 
 describe("Telegram callback_data 64-byte cap", () => {
+  beforeEach(() => seedOpenAIModels());
+  afterEach(() => restoreModelEnv());
+
   test("every callback_data emitted by every architect page is <= 64 bytes", async () => {
     const ctx: Ctx = await makeCtx(new StubBotApi());
     for (const page of architectPages) {

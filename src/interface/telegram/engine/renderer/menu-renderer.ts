@@ -1,3 +1,4 @@
+import { btn } from "../keyboard.ts";
 import { ce } from "../messages/custom-emoji.ts";
 import { escapeHtml } from "../messages/sanitise.ts";
 import { cancelTtlTimer } from "../messages/send.ts";
@@ -213,7 +214,7 @@ export class MenuRenderer {
 
   async #renderLocked(ctx: Ctx, opts: LockedRenderOpts, retried: boolean): Promise<void> {
     const replyMarkup: InlineKeyboardMarkup = {
-      inline_keyboard: [[{ text: "× Cancel", callback_data: opts.cancelData }]],
+      inline_keyboard: [[btn("× Cancel", { intent: "cancel", callback_data: opts.cancelData })]],
     };
     await this.#commit(
       ctx,

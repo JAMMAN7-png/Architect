@@ -4,6 +4,7 @@ import {
   type InlineKeyboardButton,
   type MenuBody,
   type PageDefinition,
+  btn,
   escapeHtml,
 } from "../../../engine/index.ts";
 
@@ -30,18 +31,18 @@ export const settingsOutputPage: PageDefinition = {
     const cfg = await svc.load();
     return [
       [
-        {
-          text: `${cfg.output.ui_enabled ? "🟢" : "⚪"} UI enabled`,
+        btn(`${cfg.output.ui_enabled ? "🟢" : "⚪"} UI enabled`, {
+          intent: cfg.output.ui_enabled ? "toggle-on" : "toggle-off",
           callback_data: `action:settings:set:output.ui_enabled:${!cfg.output.ui_enabled}`,
-        },
+        }),
       ],
       [
-        {
-          text: `${cfg.output.git_init ? "🟢" : "⚪"} Git init`,
+        btn(`${cfg.output.git_init ? "🟢" : "⚪"} Git init`, {
+          intent: cfg.output.git_init ? "toggle-on" : "toggle-off",
           callback_data: `action:settings:set:output.git_init:${!cfg.output.git_init}`,
-        },
+        }),
       ],
-      [{ text: "⬅️ Back", callback_data: "nav:/settings" }],
+      [btn("⬅️ Back", { intent: "back", callback_data: "nav:/settings" })],
     ];
   },
 };

@@ -154,6 +154,35 @@ export class LLMRouter {
     }
     return fulfilled;
   }
+
+  /**
+   * Tiny health-check call against `modelId`. Sends a 1-token "ping"
+   * prompt with `max_tokens: 4`. Returns latency + ok flag; never
+   * throws (errors are surfaced via the `error` field).
+   */
+  async ping(
+    modelId: string,
+    signal?: AbortSignal,
+  ): Promise<{ ok: boolean; latencyMs: number; error?: string }> {
+    const started = Date.now();
+    try {
+      const res = await this.chat({
+        tier: "execution",
+        messages: [{ role: "user", content: "ping" }],
+        modelOverride: modelId,
+        maxTokens: 4,
+        temperature: 0,
+        signal,
+      });
+      return {
+        ok: res.text.length > 0 || res.usage.outputTokens >= 0,
+        latencyMs: Date.now() - started,
+      };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      return { ok: false, latencyMs: Date.now() - started, error: message };
+    }
+  }
 }
 
 function prefixSystem(messages: ChatRequest["messages"], prefix: string): ChatRequest["messages"] {

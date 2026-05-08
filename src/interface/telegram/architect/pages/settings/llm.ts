@@ -4,6 +4,7 @@ import {
   type InlineKeyboardButton,
   type MenuBody,
   type PageDefinition,
+  btn,
   escapeHtml,
 } from "../../../engine/index.ts";
 import { indexedSettingsCallback } from "../../../engine/router/callback.ts";
@@ -41,15 +42,15 @@ export const settingsLlmPage: PageDefinition = {
     const rows: InlineKeyboardButton[][] = [];
     for (let i = 0; i < providers.length; i++) {
       const id = providers[i] ?? "";
-      const icon = enabled.has(id) ? "🟢" : "⚪";
+      const on = enabled.has(id);
       rows.push([
-        {
-          text: `${icon} ${id}`,
+        btn(`${on ? "🟢" : "⚪"} ${id}`, {
+          intent: on ? "toggle-on" : "toggle-off",
           callback_data: indexedSettingsCallback("toggle", "llm.enabled_providers", i),
-        },
+        }),
       ]);
     }
-    rows.push([{ text: "⬅️ Back", callback_data: "nav:/settings" }]);
+    rows.push([btn("⬅️ Back", { intent: "back", callback_data: "nav:/settings" })]);
     return rows;
   },
 };

@@ -6,6 +6,7 @@ import {
   type MenuBody,
   type PageDefinition,
   type PageRegistry,
+  btn,
   navigateTo,
 } from "../../engine/index.ts";
 import type { MenuRenderer } from "../../engine/renderer/menu-renderer.ts";
@@ -76,7 +77,7 @@ export const stackQuestionnairePage: PageDefinition = {
   },
 
   async keyboard(ctx: Ctx): Promise<InlineKeyboardButton[][]> {
-    const back: InlineKeyboardButton = { text: "← Back", callback_data: "nav:/" };
+    const back: InlineKeyboardButton = btn("⬅ Back", { intent: "back", callback_data: "nav:/" });
     const projectRoot = ctx.session.projectRoot;
     if (projectRoot === null) return [[back]];
 
@@ -86,10 +87,22 @@ export const stackQuestionnairePage: PageDefinition = {
 
     if (runner.pendingGate(state) === "G6") {
       return [
-        [{ text: "✅ Approve", callback_data: "action:architect:approve" }],
-        [{ text: "✏️ Edit", callback_data: "action:architect:edit" }],
-        [{ text: "🔁 Revise", callback_data: "action:architect:revise" }],
-        [{ text: "❌ Reject", callback_data: "action:architect:reject" }],
+        [
+          btn("✅ Approve", {
+            intent: "approve",
+            style: "success",
+            callback_data: "action:architect:approve",
+          }),
+        ],
+        [btn("✏️ Edit", { intent: "edit", callback_data: "action:architect:edit" })],
+        [btn("🔁 Revise", { intent: "revise", callback_data: "action:architect:revise" })],
+        [
+          btn("❌ Reject", {
+            intent: "reject",
+            style: "danger",
+            callback_data: "action:architect:reject",
+          }),
+        ],
         [back],
       ];
     }

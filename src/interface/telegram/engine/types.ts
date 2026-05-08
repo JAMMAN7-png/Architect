@@ -124,7 +124,14 @@ export interface InlineKeyboardButton {
   text: string;
   callback_data?: string;
   url?: string;
+  /** Bot API 9.4: shows a Premium custom emoji before the text. */
+  icon_custom_emoji_id?: string;
+  /** Bot API 9.4: "danger" | "success" | "primary". Omitted → default. */
+  style?: InlineKeyboardButtonStyle;
 }
+
+/** Bot API 9.4 button color styles. */
+export type InlineKeyboardButtonStyle = "danger" | "success" | "primary";
 
 export interface InlineKeyboardMarkup {
   inline_keyboard: InlineKeyboardButton[][];
