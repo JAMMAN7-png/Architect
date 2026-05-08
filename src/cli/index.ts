@@ -8,6 +8,16 @@ import { loadConfig } from "../config/loader.ts";
 import { makeCliPrompts } from "../interface/cli/prompts.ts";
 import { CliRenderer } from "../interface/cli/renderer.ts";
 import { Liaison } from "../interface/liaison.ts";
+import { registerArchitectActions } from "../interface/telegram/architect/actions.ts";
+import {
+  architectPages,
+  registerModePageActions,
+  registerSparkPageActions,
+} from "../interface/telegram/architect/pages/index.ts";
+import { makeArchitectRunner } from "../interface/telegram/architect/runner.ts";
+import { FileSessionStore } from "../interface/telegram/engine/session/store.ts";
+import { startTelefocusBot } from "../interface/telegram/server.ts";
+import { serveBot } from "../interface/telegram/webhook.ts";
 import { LLMRouter } from "../llm/router.ts";
 import { resolveApproval } from "../orchestrator/approvals.ts";
 import { ProjectExistsError, bootstrapProject } from "../orchestrator/bootstrap.ts";
@@ -173,7 +183,24 @@ program
     const cfg = await loadConfig();
     process.stdout.write(`${kleur.bold("architect doctor")}\n`);
     process.stdout.write(`  config: ${kleur.gray(JSON.stringify(cfg.models))}\n`);
-    const keys = ["ANTHROPIC_API_KEY", "OPENAI_API_KEY", "DEEPSEEK_API_KEY", "OPENROUTER_API_KEY"];
+    const keys = [
+      "ANTHROPIC_API_KEY",
+      "OPENAI_API_KEY",
+      "XAI_API_KEY",
+      "DEEPSEEK_API_KEY",
+      "OPENROUTER_API_KEY",
+      "VERCEL_AI_GATEWAY_API_KEY",
+      "CEREBRAS_API_KEY",
+      "GROQ_API_KEY",
+      "NVIDIA_API_KEY",
+      "OPENCODE_ZEN_API_KEY",
+      "OPENCODE_GO_API_KEY",
+      "EXA_API_KEY",
+      "PARALLEL_API_KEY",
+      "FIRECRAWL_API_KEY",
+      "TELEGRAM_BOT_TOKEN",
+      "TELEGRAM_ADMIN_CHAT_ID",
+    ];
     for (const k of keys) {
       const present = !!process.env[k];
       process.stdout.write(`  ${present ? kleur.green("✓") : kleur.gray("·")} ${k}\n`);
@@ -188,6 +215,53 @@ program
     const state = await loadState(root);
     process.stdout.write(`${kleur.gray("verify is a stub in M1 — will be wired in M5/M6")}\n`);
     process.stdout.write(`  project: ${state.projectName}\n  root: ${state.projectRoot}\n`);
+  });
+
+program
+  .command("bot")
+  .description("Run the Architect Telegram bot")
+  .option("--projects-root <path>", "Where projects live", resolve(process.cwd(), "projects"))
+  .option(
+    "--session-store <path>",
+    "Telefocus session JSON dir",
+    resolve(process.cwd(), ".sessions"),
+  )
+  .action(async (opts: { projectsRoot: string; sessionStore: string }) => {
+    const token = process.env.TELEGRAM_BOT_TOKEN;
+    if (!token) {
+      process.stderr.write(`${kleur.red("✗")} TELEGRAM_BOT_TOKEN is not set\n`);
+      process.exit(2);
+    }
+    const cfg = await loadConfig();
+    const router = new LLMRouter(cfg);
+    const { bus } = makeBus();
+    const phases = buildDefaultRegistry();
+    const runner = makeArchitectRunner({ router, bus, phases });
+    const store = new FileSessionStore(opts.sessionStore);
+    const bot = await startTelefocusBot({
+      token,
+      store,
+      pages: architectPages,
+      services: { architect: runner, projectsRoot: opts.projectsRoot },
+      actions: (b, deps) => {
+        const actionDeps = { ...deps, runner };
+        registerArchitectActions(b, actionDeps);
+        registerSparkPageActions(b, actionDeps);
+        registerModePageActions(b, actionDeps);
+      },
+    });
+    const adminChatId = process.env.TELEGRAM_ADMIN_CHAT_ID;
+    const port = Number(process.env.BOT_PORT ?? 3000);
+    const publicUrl = process.env.BOT_PUBLIC_URL;
+    const secret = process.env.BOT_WEBHOOK_SECRET;
+    const banner = [
+      `${kleur.green("✓")} architect bot ${publicUrl ? `webhook=${publicUrl}` : "polling"} port=${port}`,
+      `  projects-root: ${opts.projectsRoot}`,
+      `  session-store: ${opts.sessionStore}`,
+      ...(adminChatId ? [`  admin: ${adminChatId}`] : []),
+    ].join("\n");
+    process.stdout.write(`${banner}\n`);
+    await serveBot({ bot, publicUrl, port, secret });
   });
 
 program.parseAsync(process.argv).catch((err) => {

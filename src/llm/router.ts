@@ -10,9 +10,15 @@ import {
 } from "./adapter.ts";
 import { resolveModel } from "./models.ts";
 import { AnthropicProvider } from "./providers/anthropic.ts";
+import { CerebrasProvider } from "./providers/cerebras.ts";
 import { DeepSeekProvider } from "./providers/deepseek.ts";
+import { GroqProvider } from "./providers/groq.ts";
+import { NvidiaProvider } from "./providers/nvidia.ts";
 import { OpenAIProvider } from "./providers/openai.ts";
+import { OpenCodeGoProvider } from "./providers/opencode-go.ts";
+import { OpenCodeZenProvider } from "./providers/opencode-zen.ts";
 import { OpenRouterProvider } from "./providers/openrouter.ts";
+import { VercelGatewayProvider } from "./providers/vercel-gateway.ts";
 import { XaiProvider } from "./providers/xai.ts";
 import type { ModelTier } from "./tiers.ts";
 
@@ -48,6 +54,12 @@ export class LLMRouter {
       xai: new XaiProvider(),
       deepseek: new DeepSeekProvider(),
       openrouter: new OpenRouterProvider(),
+      "vercel-gateway": new VercelGatewayProvider(),
+      cerebras: new CerebrasProvider(),
+      groq: new GroqProvider(),
+      nvidia: new NvidiaProvider(),
+      "opencode-zen": new OpenCodeZenProvider(),
+      "opencode-go": new OpenCodeGoProvider(),
       ...overrides,
     };
   }
@@ -162,6 +174,18 @@ function envKeyFor(provider: string): string {
       return "DEEPSEEK_API_KEY";
     case "openrouter":
       return "OPENROUTER_API_KEY";
+    case "vercel-gateway":
+      return "VERCEL_AI_GATEWAY_API_KEY";
+    case "cerebras":
+      return "CEREBRAS_API_KEY";
+    case "groq":
+      return "GROQ_API_KEY";
+    case "nvidia":
+      return "NVIDIA_API_KEY";
+    case "opencode-zen":
+      return "OPENCODE_ZEN_API_KEY";
+    case "opencode-go":
+      return "OPENCODE_GO_API_KEY";
     default:
       return `${provider.toUpperCase()}_API_KEY`;
   }

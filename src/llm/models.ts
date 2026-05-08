@@ -1,6 +1,7 @@
 /**
  * Model registry. Maps configured ids (provider/model) to:
- *   - canonical provider key (anthropic | openai | xai | deepseek | openrouter)
+ *   - canonical provider key (anthropic | openai | xai | deepseek | openrouter |
+ *     vercel-gateway | cerebras | groq | nvidia | opencode-zen | opencode-go)
  *   - actual model id sent to that provider
  *   - rough USD-per-token rates (input/output) for cost estimates
  *
@@ -8,7 +9,18 @@
  * cost estimates fall back to a neutral default when a model isn't recognized.
  */
 
-export type ProviderKey = "anthropic" | "openai" | "xai" | "deepseek" | "openrouter";
+export type ProviderKey =
+  | "anthropic"
+  | "openai"
+  | "xai"
+  | "deepseek"
+  | "openrouter"
+  | "vercel-gateway"
+  | "cerebras"
+  | "groq"
+  | "nvidia"
+  | "opencode-zen"
+  | "opencode-go";
 
 export interface ModelInfo {
   /** Provider that the request goes to. */
@@ -72,6 +84,59 @@ const REGISTRY: Record<string, ModelInfo> = {
     apiId: "openrouter/auto",
     inUsdPerM: 5,
     outUsdPerM: 15,
+  },
+  // Vercel AI Gateway (proxies upstream providers; cost approx mirrors upstream rate-card)
+  "vercel-gateway/anthropic/claude-sonnet-4-5": {
+    provider: "vercel-gateway",
+    apiId: "anthropic/claude-sonnet-4-5",
+    inUsdPerM: 3,
+    outUsdPerM: 15,
+  },
+  "vercel-gateway/openai/gpt-5-mini": {
+    provider: "vercel-gateway",
+    apiId: "openai/gpt-5-mini",
+    inUsdPerM: 0.5,
+    outUsdPerM: 2,
+  },
+  // Cerebras (approx pricing)
+  "cerebras/llama-3.3-70b": {
+    provider: "cerebras",
+    apiId: "llama-3.3-70b",
+    inUsdPerM: 0.85,
+    outUsdPerM: 1.2,
+  },
+  // Groq (approx pricing)
+  "groq/llama-3.3-70b-versatile": {
+    provider: "groq",
+    apiId: "llama-3.3-70b-versatile",
+    inUsdPerM: 0.59,
+    outUsdPerM: 0.79,
+  },
+  "groq/llama-3.1-8b-instant": {
+    provider: "groq",
+    apiId: "llama-3.1-8b-instant",
+    inUsdPerM: 0.05,
+    outUsdPerM: 0.08,
+  },
+  // NVIDIA NIM (approx pricing)
+  "nvidia/meta/llama-3.3-70b-instruct": {
+    provider: "nvidia",
+    apiId: "meta/llama-3.3-70b-instruct",
+    inUsdPerM: 0.2,
+    outUsdPerM: 0.2,
+  },
+  // OpenCode Zen / Go (approx; actual rates depend on upstream model)
+  "opencode-zen/claude-sonnet-4-5": {
+    provider: "opencode-zen",
+    apiId: "claude-sonnet-4-5",
+    inUsdPerM: 3,
+    outUsdPerM: 15,
+  },
+  "opencode-go/gpt-5": {
+    provider: "opencode-go",
+    apiId: "gpt-5",
+    inUsdPerM: 5,
+    outUsdPerM: 20,
   },
 };
 
