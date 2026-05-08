@@ -164,3 +164,8 @@ export function estimateUsd(modelId: string, inTokens: number, outTokens: number
   const info = resolveModel(modelId);
   return (inTokens / 1_000_000) * info.inUsdPerM + (outTokens / 1_000_000) * info.outUsdPerM;
 }
+
+/** Sorted list of registered model slugs, e.g. for picker UIs. */
+export function listKnownModels(): string[] {
+  return Object.keys(REGISTRY).sort();
+}

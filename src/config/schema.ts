@@ -20,13 +20,58 @@ export type ModelsConfig = z.infer<typeof ModelsConfig>;
 
 export const SearchConfig = z
   .object({
-    provider: z.enum(["firecrawl", "parallel"]).default("firecrawl"),
+    provider: z.enum(["firecrawl", "parallel", "exa"]).default("firecrawl"),
+    enabled_providers: z.array(z.enum(["firecrawl", "parallel", "exa"])).default(["firecrawl"]),
     base_url: z.string().default(""),
     noise_filter: z.number().min(0).max(1).default(0.85),
     per_query_cap: z.number().int().positive().default(500),
   })
   .strict();
 export type SearchConfig = z.infer<typeof SearchConfig>;
+
+export const LlmConfig = z
+  .object({
+    enabled_providers: z
+      .array(
+        z.enum([
+          "anthropic",
+          "openai",
+          "xai",
+          "deepseek",
+          "openrouter",
+          "vercel-gateway",
+          "cerebras",
+          "groq",
+          "nvidia",
+          "opencode-zen",
+          "opencode-go",
+        ]),
+      )
+      .default([
+        "anthropic",
+        "openai",
+        "xai",
+        "deepseek",
+        "openrouter",
+        "vercel-gateway",
+        "cerebras",
+        "groq",
+        "nvidia",
+        "opencode-zen",
+        "opencode-go",
+      ]),
+  })
+  .strict();
+export type LlmConfig = z.infer<typeof LlmConfig>;
+
+export const RuntimeConfig = z
+  .object({
+    log_level: z.enum(["debug", "info", "warn", "error"]).default("info"),
+    retry_attempts: z.number().int().min(0).max(10).default(4),
+    max_tokens_default: z.number().int().positive().default(4000),
+  })
+  .strict();
+export type RuntimeConfig = z.infer<typeof RuntimeConfig>;
 
 export const BrainstormConfig = z
   .object({
@@ -49,6 +94,8 @@ export const ArchitectConfig = z
   .object({
     models: ModelsConfig.default({}),
     search: SearchConfig.default({}),
+    llm: LlmConfig.default({}),
+    runtime: RuntimeConfig.default({}),
     brainstorm: BrainstormConfig.default({}),
     output: OutputConfig.default({}),
   })

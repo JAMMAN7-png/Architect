@@ -50,12 +50,14 @@ export const welcomePage: PageDefinition = {
           { text: "🆕 New Project", callback_data: "action:architect:new" },
           { text: "📦 Open Project", callback_data: "action:architect:open" },
         ],
+        [{ text: "⚙ Settings", callback_data: "nav:/settings" }],
       ];
     }
     return [
       [{ text: "▶ Continue", callback_data: "action:architect:continue" }],
       [{ text: "🔍 Status", callback_data: "nav:/status" }],
       [{ text: "🔄 Reset Project", callback_data: "action:architect:reset" }],
+      [{ text: "⚙ Settings", callback_data: "nav:/settings" }],
     ];
   },
   inputFlow: makeNewProjectFlow(),

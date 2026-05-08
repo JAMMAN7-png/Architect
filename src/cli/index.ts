@@ -5,13 +5,17 @@ import { dirname, resolve } from "node:path";
 import { Command } from "commander";
 import kleur from "kleur";
 import { loadConfig } from "../config/loader.ts";
+import { configFile } from "../config/paths.ts";
+import { LLM_PROVIDERS, SEARCH_PROVIDERS, makeSettingsService } from "../config/service.ts";
 import { makeCliPrompts } from "../interface/cli/prompts.ts";
 import { CliRenderer } from "../interface/cli/renderer.ts";
+import { confirmReset, printConfig, promptValue } from "../interface/cli/settings-prompt.ts";
 import { Liaison } from "../interface/liaison.ts";
 import { registerArchitectActions } from "../interface/telegram/architect/actions.ts";
 import {
   architectPages,
   registerModePageActions,
+  registerSettingsActions,
   registerSparkPageActions,
 } from "../interface/telegram/architect/pages/index.ts";
 import { makeArchitectRunner } from "../interface/telegram/architect/runner.ts";
@@ -217,6 +221,145 @@ program
     process.stdout.write(`  project: ${state.projectName}\n  root: ${state.projectRoot}\n`);
   });
 
+const configGroup = program.command("config").description("View or change Architect settings");
+
+configGroup
+  .command("list")
+  .description("Show resolved config")
+  .action(async () => {
+    const svc = makeSettingsService();
+    const cfg = await svc.load();
+    process.stdout.write(`${kleur.gray("file: ")}${configFile()}\n${printConfig(cfg, svc)}\n`);
+  });
+
+configGroup
+  .command("get <key>")
+  .description("Read one setting by dotted key (e.g. models.strategic)")
+  .action(async (key: string) => {
+    const svc = makeSettingsService();
+    const cfg = await svc.load();
+    const value = svc.get(cfg, key);
+    if (value === undefined) {
+      process.stderr.write(`${kleur.red("✗")} unknown key: ${key}\n`);
+      process.exit(2);
+    }
+    process.stdout.write(`${JSON.stringify(value)}\n`);
+  });
+
+configGroup
+  .command("set <key> <value>")
+  .description("Write one setting (value parsed per type)")
+  .action(async (key: string, value: string) => {
+    const svc = makeSettingsService();
+    const cfg = await svc.load();
+    try {
+      const next = svc.set(cfg, key, value);
+      const path = await svc.save(next);
+      const v = svc.get(next, key);
+      process.stdout.write(
+        `${kleur.green("✓")} ${key} = ${JSON.stringify(v)}\n${kleur.gray(`  saved to ${path}`)}\n`,
+      );
+    } catch (err) {
+      process.stderr.write(`${kleur.red("✗")} ${(err as Error).message}\n`);
+      process.exit(2);
+    }
+  });
+
+configGroup
+  .command("toggle <key> <member>")
+  .description("Toggle membership in a list setting (e.g. search.enabled_providers parallel)")
+  .action(async (key: string, member: string) => {
+    const svc = makeSettingsService();
+    const cfg = await svc.load();
+    try {
+      const next = svc.toggle(cfg, key, member);
+      const path = await svc.save(next);
+      const v = svc.get(next, key);
+      process.stdout.write(
+        `${kleur.green("✓")} ${key} = ${JSON.stringify(v)}\n${kleur.gray(`  saved to ${path}`)}\n`,
+      );
+    } catch (err) {
+      process.stderr.write(`${kleur.red("✗")} ${(err as Error).message}\n`);
+      process.exit(2);
+    }
+  });
+
+configGroup
+  .command("edit")
+  .description("Interactive editor for every setting")
+  .action(async () => {
+    const svc = makeSettingsService();
+    let cfg = await svc.load();
+    for (const d of svc.catalog()) {
+      const current = svc.get(cfg, d.key);
+      const next = await promptValue(d, current, svc.knownModels());
+      cfg = svc.set(cfg, d.key, next);
+    }
+    const path = await svc.save(cfg);
+    process.stdout.write(`${kleur.green("✓")} saved ${path}\n`);
+  });
+
+configGroup
+  .command("models")
+  .description("Interactive picker for the five tier models")
+  .action(async () => {
+    const svc = makeSettingsService();
+    let cfg = await svc.load();
+    const tierKeys = [
+      "models.strategic",
+      "models.execution",
+      "models.ui",
+      "models.fallback",
+      "models.ensemble",
+    ];
+    for (const key of tierKeys) {
+      const d = svc.describe(key);
+      const current = svc.get(cfg, key);
+      const next = await promptValue(d, current, svc.knownModels());
+      cfg = svc.set(cfg, key, next);
+    }
+    const path = await svc.save(cfg);
+    process.stdout.write(`${kleur.green("✓")} saved ${path}\n`);
+  });
+
+configGroup
+  .command("search")
+  .description("Interactive picker for search providers")
+  .action(async () => {
+    const svc = makeSettingsService();
+    let cfg = await svc.load();
+    const enabledD = svc.describe("search.enabled_providers");
+    const enabled = await promptValue(
+      enabledD,
+      svc.get(cfg, "search.enabled_providers"),
+      svc.knownModels(),
+    );
+    cfg = svc.set(cfg, "search.enabled_providers", enabled);
+    const primaryD = svc.describe("search.provider");
+    const primary = await promptValue(primaryD, svc.get(cfg, "search.provider"), svc.knownModels());
+    cfg = svc.set(cfg, "search.provider", primary);
+    const path = await svc.save(cfg);
+    process.stdout.write(
+      `${kleur.green("✓")} saved ${path}\n  primary: ${primary}\n  enabled: ${(enabled as string[]).join(", ")}\n`,
+    );
+  });
+
+configGroup
+  .command("reset")
+  .description("Restore the on-disk config to built-in defaults")
+  .action(async () => {
+    if (!(await confirmReset())) {
+      process.stdout.write(`${kleur.gray("cancelled")}\n`);
+      return;
+    }
+    const svc = makeSettingsService();
+    const path = await svc.save(svc.reset());
+    process.stdout.write(`${kleur.green("✓")} reset; wrote ${path}\n`);
+  });
+
+// Reference unused imports defensively so they survive tree-shake in dev.
+void [LLM_PROVIDERS, SEARCH_PROVIDERS];
+
 program
   .command("bot")
   .description("Run the Architect Telegram bot")
@@ -248,6 +391,7 @@ program
         registerArchitectActions(b, actionDeps);
         registerSparkPageActions(b, actionDeps);
         registerModePageActions(b, actionDeps);
+        registerSettingsActions(b, actionDeps);
       },
     });
     const adminChatId = process.env.TELEGRAM_ADMIN_CHAT_ID;

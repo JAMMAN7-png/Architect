@@ -64,6 +64,15 @@ export async function startTelefocusBot(opts: StartOptions): Promise<Bot> {
     services: opts.services,
   });
 
+  // Back-fill canonical nav handle so pages/action handlers can read
+  // `ctx.services.nav` without each caller having to thread the registry
+  // and renderer through bootstrap.
+  (opts.services as { nav?: unknown }).nav = {
+    registry: tf.registry,
+    renderer: tf.renderer,
+    store: opts.store,
+  };
+
   // /start <payload> — bypass the pipeline, load the persisted session
   // directly, and route to the deep-link target. Registering before
   // `bot.use(...)` lets grammY's command matcher run first; the handler

@@ -47,9 +47,59 @@ export function applyEnvOverrides(cfg: ArchitectConfig): ArchitectConfig {
   }
   if (env.ARCHITECT_SEARCH_PROVIDER) {
     const v = env.ARCHITECT_SEARCH_PROVIDER;
-    if (v === "firecrawl" || v === "parallel") next.search.provider = v;
+    if (v === "firecrawl" || v === "parallel" || v === "exa") next.search.provider = v;
   }
   if (env.ARCHITECT_SEARCH_BASE_URL) next.search.base_url = env.ARCHITECT_SEARCH_BASE_URL;
+
+  const LOG_LEVELS = ["debug", "info", "warn", "error"] as const;
+  if (env.ARCHITECT_LOG_LEVEL) {
+    const v = env.ARCHITECT_LOG_LEVEL;
+    if ((LOG_LEVELS as readonly string[]).includes(v)) {
+      next.runtime.log_level = v as (typeof LOG_LEVELS)[number];
+    }
+  }
+  if (env.ARCHITECT_RETRY_ATTEMPTS) {
+    const n = Number.parseInt(env.ARCHITECT_RETRY_ATTEMPTS, 10);
+    if (Number.isInteger(n)) {
+      next.runtime.retry_attempts = Math.max(0, Math.min(10, n));
+    }
+  }
+  if (env.ARCHITECT_MAX_TOKENS_DEFAULT) {
+    const n = Number.parseInt(env.ARCHITECT_MAX_TOKENS_DEFAULT, 10);
+    if (Number.isInteger(n) && n > 0) {
+      next.runtime.max_tokens_default = n;
+    }
+  }
+  const SEARCH_PROVIDERS = ["firecrawl", "parallel", "exa"] as const;
+  if (env.ARCHITECT_SEARCH_ENABLED) {
+    const arr = env.ARCHITECT_SEARCH_ENABLED.split(",")
+      .map((s) => s.trim())
+      .filter((s): s is (typeof SEARCH_PROVIDERS)[number] =>
+        (SEARCH_PROVIDERS as readonly string[]).includes(s),
+      );
+    if (arr.length > 0) next.search.enabled_providers = arr;
+  }
+  const LLM_PROVIDERS = [
+    "anthropic",
+    "openai",
+    "xai",
+    "deepseek",
+    "openrouter",
+    "vercel-gateway",
+    "cerebras",
+    "groq",
+    "nvidia",
+    "opencode-zen",
+    "opencode-go",
+  ] as const;
+  if (env.ARCHITECT_LLM_ENABLED) {
+    const arr = env.ARCHITECT_LLM_ENABLED.split(",")
+      .map((s) => s.trim())
+      .filter((s): s is (typeof LLM_PROVIDERS)[number] =>
+        (LLM_PROVIDERS as readonly string[]).includes(s),
+      );
+    if (arr.length > 0) next.llm.enabled_providers = arr;
+  }
   return next;
 }
 
