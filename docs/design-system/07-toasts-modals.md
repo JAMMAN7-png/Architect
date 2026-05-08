@@ -92,7 +92,10 @@ persists past its TTL is a bug, not a UX choice.
 Calling `modal.confirm(...)` sets `session.activeModal`, which causes the
 menu renderer to paint a **locked body** with a single `× Cancel`
 button. The user cannot interact with the underlying page's keyboard
-until the modal resolves or is dismissed.
+until the modal resolves or is dismissed. Opening a modal triggers an
+immediate menu rerender so the locked-body holding state lands in the
+same tick — the user never sees the underlying page's keyboard alongside
+the modal.
 
 - The modal's own Cancel button MUST do something observable: clear `session.activeModal`, dismiss interactive messages in scope, and rerender the menu. An inert cancel button is a bug.
 - Action handlers MUST register **both** confirm and cancel callbacks. Lint rule (TODO) flags any `modal.confirm` whose `cancelCallback` is unregistered.

@@ -129,6 +129,16 @@ const confirmModal = async (ctx: Ctx, opts: ConfirmOptions): Promise<TrackedMess
     title: opts.title,
   };
 
+  const nav = (ctx.services as { nav?: { renderer?: { rerender(ctx: Ctx): Promise<void> } } }).nav;
+  if (nav?.renderer?.rerender !== undefined) {
+    try {
+      await nav.renderer.rerender(ctx);
+    } catch {
+      // Forgiveable: failure to rerender the lock body should not
+      // block the modal from opening.
+    }
+  }
+
   return tracked;
 };
 

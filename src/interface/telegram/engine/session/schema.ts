@@ -58,6 +58,7 @@ export const MenuStateSchema = z
     navigationStack: z.array(z.string()),
     lastAction: z.string().optional(),
     lastActionAt: z.number().optional(),
+    staleness: z.number().optional(),
   })
   .strict();
 
@@ -112,6 +113,7 @@ export function freshSession(input: {
       currentPage: "/",
       previousPage: null,
       navigationStack: ["/"],
+      staleness: 0,
     },
     messages: {},
     inputFlow: {

@@ -78,6 +78,15 @@ export interface UserSession {
     navigationStack: string[];
     lastAction?: string;
     lastActionAt?: number;
+    /**
+     * Counter of fresh non-MENU sends and captured user-flow inputs
+     * since the last successful menu render. When this crosses the
+     * staleness threshold the next render forces a fresh message at
+     * the chat bottom so the menu doesn't drown in scroll. Reset to
+     * 0 on every successful render or `forceFresh`. Optional on the
+     * wire to keep pre-existing persisted sessions readable.
+     */
+    staleness?: number;
   };
 
   /** Tracked messages, grouped by page-path scope. */
@@ -138,6 +147,13 @@ export interface SendOptions {
   /** Edit any prior same-type+subtype message in scope rather than send anew. */
   replacePrevious?: boolean;
   metadata?: Record<string, unknown>;
+  /**
+   * Reply target for the FRESH-send branch. Defaults to
+   * `session.menu.messageId` so non-MENU messages thread under the
+   * main menu. Pass `null` to opt out (e.g. when intentionally
+   * sending a top-level message). Ignored on edit-replace.
+   */
+  replyTo?: number | null;
 }
 
 // ── Input flow definitions ────────────────────────────────────────────

@@ -81,6 +81,37 @@ await toast.info(ctx, 'Saved.');
 await toast.info(ctx, 'Saved again.');  // edits the first in place
 ```
 
+## Reply threading
+
+Every fresh non-MENU `send` defaults to threading under the main menu
+message so the chat keeps a single "conversation" instead of a flat
+list of detached toasts. Concretely the FRESH-send branch in
+`messages/send.ts` adds:
+
+```ts
+reply_parameters: {
+  message_id: session.menu.messageId,
+  allow_sending_without_reply: true,
+}
+```
+
+Rules:
+
+- Defaults to `session.menu.messageId`. If no menu has rendered yet
+  (`messageId === null`), the field is omitted and the message lands
+  unthreaded.
+- Pass `replyTo: <id>` to thread under a different message.
+- Pass `replyTo: null` to opt out (use this when sending a deliberate
+  top-level message — e.g. a fresh menu after `forceFresh`).
+- The **edit-replace** branch never adds `reply_parameters`. Editing
+  an existing message in place does not relocate it.
+- `allow_sending_without_reply: true` lets the send succeed even when
+  the menu message has been deleted in the meantime; Telegram drops
+  the threading silently in that case.
+
+Bot API 7.0 deprecated the legacy `reply_to_message_id` flag in favour
+of `reply_parameters`; the engine emits the new shape exclusively.
+
 ## Interactive — confirmation & modal
 
 Used for decisions that must block navigation:

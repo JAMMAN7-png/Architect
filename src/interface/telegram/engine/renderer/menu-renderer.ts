@@ -39,6 +39,13 @@ const NOT_FOUND_NEEDLE = "message to edit not found";
 /** Telegram's no-op edit error: `message is not modified`. */
 const NOT_MODIFIED_NEEDLE = "message is not modified";
 
+/**
+ * Number of fresh non-MENU sends (or captured user-flow inputs) after
+ * which the menu is considered scrolled out of view. The next render
+ * forces a fresh send at the chat bottom.
+ */
+const STALENESS_THRESHOLD = 3;
+
 /** Defensive substring match against `description` and `message` fields. */
 const errorMatches = (err: unknown, needle: string): boolean => {
   if (typeof err !== "object" || err === null) return false;
@@ -150,6 +157,19 @@ export class MenuRenderer {
   }
 
   async #render(ctx: Ctx, page: PageDefinition, retried: boolean): Promise<void> {
+    // Staleness check: when the menu has been pushed out of view by
+    // chat noise, force a fresh send so the next render lands at the
+    // chat bottom. Skipped on the recursion (`retried`) so a stale-id
+    // recovery doesn't re-trigger this branch.
+    const staleness = ctx.session.menu.staleness ?? 0;
+    if (!retried && staleness >= STALENESS_THRESHOLD && ctx.session.menu.messageId !== null) {
+      await this.forceFresh(ctx);
+      ctx.session.menu.staleness = 0;
+      // Fall through — `forceFresh` cleared `messageId`, so the
+      // commit path below will send a fresh message at the chat
+      // bottom.
+    }
+
     // Lock state: modals strictly preempt input flows. While either lock
     // is active, the menu does not consult the page — it shows a holding
     // body with a single Cancel button instead.
@@ -231,6 +251,7 @@ export class MenuRenderer {
         text: args.text,
         markup: markupJson,
       });
+      ctx.session.menu.staleness = 0;
       if (args.updateCurrentPage && ctx.session.menu.currentPage !== args.pagePath) {
         ctx.session.menu.currentPage = args.pagePath;
       }
@@ -240,6 +261,7 @@ export class MenuRenderer {
     const key = this.#cacheKey(ctx.chatId, existingId);
     const cached = this.#cache.get(key);
     if (cached && cached.text === args.text && cached.markup === markupJson) {
+      ctx.session.menu.staleness = 0;
       if (args.updateCurrentPage && ctx.session.menu.currentPage !== args.pagePath) {
         ctx.session.menu.currentPage = args.pagePath;
       }
@@ -266,6 +288,7 @@ export class MenuRenderer {
     }
 
     this.#cache.set(key, { text: args.text, markup: markupJson });
+    ctx.session.menu.staleness = 0;
     if (args.updateCurrentPage && ctx.session.menu.currentPage !== args.pagePath) {
       ctx.session.menu.currentPage = args.pagePath;
     }

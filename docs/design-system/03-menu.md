@@ -69,6 +69,32 @@ that ID. A new message is only sent when:
    `message to edit not found`).
 3. Telegram can no longer edit it (rare; > 48 h since send).
 
+## Staleness and freshness
+
+The Menu Message can scroll out of view if the user (or the bot) sends
+enough chat noise after the last render. To keep the menu reachable
+without forcing the user to scroll up, the renderer tracks a
+**staleness counter** on `session.menu.staleness`:
+
+- Incremented on every fresh non-MENU send through the typed `send`
+  layer (toasts, modals, prompts) and on every successful capture of
+  user-supplied input inside an active flow.
+- Edit-replace branches do **not** count — editing in place doesn't
+  push the menu off-screen.
+- `INPUT_PROGRESS` sends are excluded; they always replace-previous
+  after the first step and would otherwise double-count progress
+  churn.
+- When the counter reaches **3**, the next `renderMenu` call deletes
+  the tracked menu (`forceFresh`) before rendering, so the new menu
+  lands as the latest message at the chat bottom.
+- The counter is reset to `0` on every successful render
+  (fresh send, edit success, or cache-hit short-circuit) and on
+  explicit `forceFresh` calls.
+
+Older sessions persisted before this counter existed read it as
+`undefined`; the renderer treats that as `0` (`?? 0`). The first
+successful render after the upgrade writes `0` to the session.
+
 ## Page definition
 
 ```typescript

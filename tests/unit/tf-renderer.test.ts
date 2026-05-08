@@ -151,3 +151,52 @@ describe("MenuRenderer lock state", () => {
     expect(btn.callback_data).toBe("action:engine:modal:cancel");
   });
 });
+
+describe("MenuRenderer staleness", () => {
+  test("crossing the threshold triggers forceFresh + fresh send", async () => {
+    const api = new StubBotApi();
+    const ctx = await makeCtx(api);
+    const renderer = new MenuRenderer(new MemorySessionStore(), buildRegistry());
+
+    // Seed a tracked menu from a first render.
+    await renderer.renderMenu(ctx, mkPage("/a", "A"));
+    expect(ctx.session.menu.messageId).toBe(100);
+    ctx.session.menu.staleness = 3;
+
+    await renderer.renderMenu(ctx, mkPage("/a", "A"));
+
+    // forceFresh deleted the old menu, then a fresh send issued.
+    const deletes = api.calls("deleteMessage").map((c) => c.args[1]);
+    expect(deletes).toContain(100);
+    expect(api.calls("sendMessage").length).toBe(2);
+    expect(ctx.session.menu.staleness).toBe(0);
+    expect(ctx.session.menu.messageId).toBe(101);
+  });
+
+  test("below threshold edits in place, no auto-fresh", async () => {
+    const api = new StubBotApi();
+    const ctx = await makeCtx(api);
+    const renderer = new MenuRenderer(new MemorySessionStore(), buildRegistry());
+
+    await renderer.renderMenu(ctx, mkPage("/a", "A"));
+    ctx.session.menu.staleness = 2;
+
+    await renderer.renderMenu(ctx, mkPage("/b", "B"));
+
+    expect(api.calls("deleteMessage").length).toBe(0);
+    expect(api.calls("sendMessage").length).toBe(1);
+    expect(api.calls("editMessageText").length).toBe(1);
+  });
+
+  test("successful render resets staleness to 0", async () => {
+    const api = new StubBotApi();
+    const ctx = await makeCtx(api);
+    const renderer = new MenuRenderer(new MemorySessionStore(), buildRegistry());
+
+    await renderer.renderMenu(ctx, mkPage("/a", "A"));
+    ctx.session.menu.staleness = 2;
+
+    await renderer.renderMenu(ctx, mkPage("/b", "B"));
+    expect(ctx.session.menu.staleness).toBe(0);
+  });
+});

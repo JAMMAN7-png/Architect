@@ -86,6 +86,107 @@ describe("send", () => {
     // Still exactly one tracked message in scope.
     expect(ctx.session.messages["/"]?.length).toBe(1);
   });
+  test("reply threading: defaults to session.menu.messageId", async () => {
+    __setEmojiRegistryForTests({ success: FALLBACKS.success });
+    const api = new StubBotApi();
+    const ctx = await makeCtx(api);
+    ctx.session.menu.messageId = 42;
+
+    await toast.info(ctx, "hi");
+
+    const sent = api.last("sendMessage");
+    expect(sent).toBeDefined();
+    const opts = sent?.[2] as {
+      reply_parameters?: { message_id: number; allow_sending_without_reply: boolean };
+    };
+    expect(opts.reply_parameters).toEqual({ message_id: 42, allow_sending_without_reply: true });
+  });
+
+  test("reply threading: replyTo:null opts out", async () => {
+    __setEmojiRegistryForTests({ success: FALLBACKS.success });
+    const api = new StubBotApi();
+    const ctx = await makeCtx(api);
+    ctx.session.menu.messageId = 42;
+
+    await send(ctx, "hi", { type: "EPHEMERAL", subtype: "INFO", replyTo: null });
+
+    const sent = api.last("sendMessage");
+    expect(sent).toBeDefined();
+    const opts = sent?.[2] as { reply_parameters?: unknown };
+    expect(opts.reply_parameters).toBeUndefined();
+  });
+
+  test("reply threading: no menu yet → no reply_parameters, send still succeeds", async () => {
+    __setEmojiRegistryForTests({ success: FALLBACKS.success });
+    const api = new StubBotApi();
+    const ctx = await makeCtx(api);
+    expect(ctx.session.menu.messageId).toBeNull();
+
+    const tracked = await toast.info(ctx, "hi");
+    expect(tracked.messageId).toBe(100);
+
+    const sent = api.last("sendMessage");
+    const opts = sent?.[2] as { reply_parameters?: unknown };
+    expect(opts.reply_parameters).toBeUndefined();
+  });
+
+  test("reply threading: replyTo:<id> overrides the default", async () => {
+    __setEmojiRegistryForTests({ success: FALLBACKS.success });
+    const api = new StubBotApi();
+    const ctx = await makeCtx(api);
+    ctx.session.menu.messageId = 42;
+
+    await send(ctx, "hi", { type: "EPHEMERAL", subtype: "INFO", replyTo: 999 });
+
+    const sent = api.last("sendMessage");
+    const opts = sent?.[2] as { reply_parameters?: { message_id: number } };
+    expect(opts.reply_parameters?.message_id).toBe(999);
+  });
+
+  test("edit-replace branch carries no reply_parameters", async () => {
+    __setEmojiRegistryForTests({ success: FALLBACKS.success });
+    const api = new StubBotApi();
+    const ctx = await makeCtx(api);
+    ctx.session.menu.messageId = 42;
+
+    await toast.info(ctx, "first");
+    await toast.info(ctx, "second");
+
+    expect(api.calls("editMessageText").length).toBe(1);
+    const edit = api.last("editMessageText");
+    const opts = edit?.[3] as { reply_parameters?: unknown };
+    expect(opts.reply_parameters).toBeUndefined();
+  });
+
+  test("staleness bumps on a fresh non-MENU send", async () => {
+    __setEmojiRegistryForTests({ success: FALLBACKS.success });
+    const api = new StubBotApi();
+    const ctx = await makeCtx(api);
+    expect(ctx.session.menu.staleness ?? 0).toBe(0);
+
+    await toast.info(ctx, "first");
+    expect(ctx.session.menu.staleness).toBe(1);
+  });
+
+  test("staleness does NOT bump on edit-replace", async () => {
+    __setEmojiRegistryForTests({ success: FALLBACKS.success });
+    const api = new StubBotApi();
+    const ctx = await makeCtx(api);
+
+    await toast.info(ctx, "first");
+    await toast.info(ctx, "second"); // edits in place
+
+    expect(ctx.session.menu.staleness).toBe(1);
+  });
+
+  test("staleness does NOT bump on INPUT_PROGRESS sends", async () => {
+    __setEmojiRegistryForTests({ success: FALLBACKS.success });
+    const api = new StubBotApi();
+    const ctx = await makeCtx(api);
+
+    await send(ctx, "Step 1 of 2", { type: "INPUT_PROGRESS", replacePrevious: true });
+    expect(ctx.session.menu.staleness ?? 0).toBe(0);
+  });
 });
 
 describe("toast", () => {

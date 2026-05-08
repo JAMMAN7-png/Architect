@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { InputFlowEngine } from "../../src/interface/telegram/engine/flow/engine.ts";
 import { validate } from "../../src/interface/telegram/engine/flow/validators.ts";
+import { modal } from "../../src/interface/telegram/engine/messages/modal.ts";
 import { PageRegistry } from "../../src/interface/telegram/engine/registry.ts";
 import { MemorySessionStore } from "../../src/interface/telegram/engine/session/store.ts";
 import type { PageDefinition, ValidationRule } from "../../src/interface/telegram/engine/types.ts";
@@ -139,5 +140,167 @@ describe("InputFlowEngine.capture", () => {
 
     // We genuinely added more edits past the initial prompt send.
     expect(h.api.calls("editMessageText").length).toBeGreaterThan(editsBefore);
+  });
+});
+
+describe("modal lock-body rerender", () => {
+  test("modal.confirm triggers ctx.services.nav.renderer.rerender exactly once", async () => {
+    const api = new StubBotApi();
+    const ctx = await makeCtx(api);
+    let rerenderCount = 0;
+    ctx.services = {
+      nav: {
+        renderer: {
+          rerender: async (): Promise<void> => {
+            rerenderCount += 1;
+          },
+        },
+      },
+    };
+
+    await modal.confirm(ctx, {
+      title: "T",
+      body: "B",
+      confirmLabel: "ok",
+      confirmCallback: "x:y",
+    });
+
+    expect(rerenderCount).toBe(1);
+  });
+
+  test("modal.confirm without nav.renderer wired is a no-op rerender (no throw)", async () => {
+    const api = new StubBotApi();
+    const ctx = await makeCtx(api);
+    // No services.nav at all.
+    await modal.confirm(ctx, {
+      title: "T",
+      body: "B",
+      confirmLabel: "ok",
+      confirmCallback: "x:y",
+    });
+    expect(ctx.session.activeModal).not.toBeNull();
+  });
+});
+
+describe("InputFlowEngine staleness + lock", () => {
+  test("flow start invokes renderer.rerender exactly once after the prompt", async () => {
+    const api = new StubBotApi();
+    const ctx = await makeCtx(api);
+    ctx.session.menu.currentPage = "/p";
+
+    const page: PageDefinition = {
+      path: "/p",
+      parent: "/",
+      render: () => ({ text: "p" }),
+      keyboard: () => [],
+      inputFlow: {
+        flowId: "demo",
+        steps: [
+          {
+            field: "name",
+            prompt: "Name?",
+            inputType: "text",
+            validation: { type: "text", min: 1, max: 5, errorMessage: "len" },
+          },
+        ],
+        onComplete: async () => {},
+      },
+    };
+    const registry = new PageRegistry();
+    registry.registerMany([ROOT, page]);
+
+    let rerenderCount = 0;
+    let forceFreshCount = 0;
+    const renderer = {
+      rerender: async (): Promise<void> => {
+        rerenderCount += 1;
+      },
+      forceFresh: async (): Promise<void> => {
+        forceFreshCount += 1;
+      },
+    };
+    const store = new MemorySessionStore();
+    const engine = new InputFlowEngine({ registry, renderer, store });
+
+    await engine.start("demo", ctx);
+    expect(rerenderCount).toBe(1);
+    expect(forceFreshCount).toBe(0);
+  });
+
+  test("capture bumps staleness on a valid input", async () => {
+    const h = await makeHarness();
+    await h.engine.start("demo", h.ctx);
+    h.ctx.session.menu.staleness = 0;
+
+    h.ctx.message = { text: "abcd", message_id: 555 };
+    const outcome = await h.engine.capture(h.ctx);
+    expect(outcome).toBe("advanced");
+    // capture bumped once for the user input, plus one fresh prompt send
+    // for the next step (selection-vs-text doesn't matter; both bump).
+    expect(h.ctx.session.menu.staleness).toBeGreaterThanOrEqual(1);
+  });
+
+  test("capture rejection does NOT bump staleness", async () => {
+    const h = await makeHarness();
+    await h.engine.start("demo", h.ctx);
+    h.ctx.session.menu.staleness = 0;
+
+    h.ctx.message = { text: "x", message_id: 700 }; // too short
+    const outcome = await h.engine.capture(h.ctx);
+    expect(outcome).toBe("rejected");
+    expect(h.ctx.session.menu.staleness ?? 0).toBe(0);
+  });
+
+  test("flow completion calls forceFresh once and resets staleness", async () => {
+    const api = new StubBotApi();
+    const ctx = await makeCtx(api);
+    ctx.session.menu.currentPage = "/p";
+
+    let onCompleteCalled = false;
+    let forceFreshCallsBeforeOnComplete = 0;
+    let forceFreshCount = 0;
+    const page: PageDefinition = {
+      path: "/p",
+      parent: "/",
+      render: () => ({ text: "p" }),
+      keyboard: () => [],
+      inputFlow: {
+        flowId: "demo",
+        steps: [
+          {
+            field: "name",
+            prompt: "Name?",
+            inputType: "text",
+            validation: { type: "text", min: 1, max: 9, errorMessage: "len" },
+          },
+        ],
+        onComplete: async () => {
+          onCompleteCalled = true;
+          forceFreshCallsBeforeOnComplete = forceFreshCount;
+        },
+      },
+    };
+    const registry = new PageRegistry();
+    registry.registerMany([ROOT, page]);
+
+    const renderer = {
+      rerender: async (): Promise<void> => {},
+      forceFresh: async (): Promise<void> => {
+        forceFreshCount += 1;
+      },
+    };
+    const store = new MemorySessionStore();
+    const engine = new InputFlowEngine({ registry, renderer, store });
+
+    await engine.start("demo", ctx);
+    ctx.session.menu.staleness = 5;
+    ctx.message = { text: "abc", message_id: 555 };
+    const outcome = await engine.capture(ctx);
+
+    expect(outcome).toBe("completed");
+    expect(onCompleteCalled).toBe(true);
+    expect(forceFreshCount).toBe(1);
+    expect(forceFreshCallsBeforeOnComplete).toBe(1);
+    expect(ctx.session.menu.staleness).toBe(0);
   });
 });

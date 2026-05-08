@@ -141,6 +141,30 @@ function readNavStore(ctx: Ctx): NavStoreLike | undefined {
   return services.nav?.store;
 }
 
+/**
+ * Resolve the `reply_parameters.message_id` for a fresh send. Defaults
+ * to `session.menu.messageId` so non-MENU messages thread under the
+ * main menu. Callers opt out with `replyTo: null`, override with a
+ * numeric `replyTo`. Ignored entirely on the edit-replace branch.
+ */
+function resolveReplyTo(ctx: Ctx, opts: SendOptions): number | undefined {
+  if (opts.replyTo === null) return undefined;
+  if (typeof opts.replyTo === "number") return opts.replyTo;
+  const id = ctx.session.menu.messageId;
+  return typeof id === "number" ? id : undefined;
+}
+
+/**
+ * Increment the menu's staleness counter on every fresh non-MENU send.
+ * INPUT_PROGRESS sends are skipped because they always replace-previous
+ * after the first one and would otherwise double-count against
+ * progress-step churn.
+ */
+function bumpStaleness(ctx: Ctx, opts: SendOptions): void {
+  if (opts.type === "INPUT_PROGRESS") return;
+  ctx.session.menu.staleness = (ctx.session.menu.staleness ?? 0) + 1;
+}
+
 /** Cancel any pending TTL eviction for `(chatId, messageId)`. */
 export function cancelTtlTimer(chatId: number, messageId: number): void {
   const key = ttlKey(chatId, messageId);
@@ -234,10 +258,16 @@ export async function send(ctx: Ctx, text: string, opts: SendOptions): Promise<T
     }
   }
 
-  const sent = await ctx.api.sendMessage(ctx.chatId, finalText, {
+  const replyTo = resolveReplyTo(ctx, opts);
+  const sendOpts: Record<string, unknown> = {
     parse_mode: parseMode,
     reply_markup: opts.replyMarkup,
-  });
+  };
+  if (replyTo !== undefined) {
+    sendOpts.reply_parameters = { message_id: replyTo, allow_sending_without_reply: true };
+  }
+  const sent = await ctx.api.sendMessage(ctx.chatId, finalText, sendOpts);
+  bumpStaleness(ctx, opts);
 
   const now = Date.now();
   const tracked: TrackedMessage = {

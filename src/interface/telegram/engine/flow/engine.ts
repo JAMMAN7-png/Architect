@@ -37,6 +37,13 @@ import { validate } from "./validators.ts";
  */
 export interface MenuRenderer {
   rerender(ctx: Ctx): Promise<void>;
+  /**
+   * Optional: drop the tracked menu so the next render lands at the
+   * chat bottom. The flow engine calls this on completion so the page
+   * the `onComplete` hook navigates to becomes the latest message
+   * even after a long input flow has scrolled the menu out of view.
+   */
+  forceFresh?(ctx: Ctx): Promise<void>;
 }
 
 export interface InputFlowDeps {
@@ -119,6 +126,7 @@ export class InputFlowEngine {
     );
     ctx.session.inputFlow.promptMessageId = prompt.messageId;
 
+    await this.#deps.renderer.rerender(ctx);
     await this.#deps.store.save(ctx.session);
   }
 
@@ -177,6 +185,7 @@ export class InputFlowEngine {
     }
 
     flow.collectedData[step.field] = result.value;
+    ctx.session.menu.staleness = (ctx.session.menu.staleness ?? 0) + 1;
 
     if (step.inputType !== "selection" && ctx.message !== undefined) {
       try {
@@ -221,6 +230,10 @@ export class InputFlowEngine {
 
     const collected = flow.collectedData;
     ctx.session.inputFlow = freshInactiveFlow();
+    ctx.session.menu.staleness = 0;
+    if (this.#deps.renderer.forceFresh !== undefined) {
+      await this.#deps.renderer.forceFresh(ctx);
+    }
     await this.#deps.store.save(ctx.session);
     await flowDef.onComplete(collected, ctx);
     return "completed";
