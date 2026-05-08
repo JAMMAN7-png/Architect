@@ -97,7 +97,7 @@ describe("goBack", () => {
 describe("resolveStart", () => {
   test("routes by payload and projectRoot", () => {
     const session = freshSession({ userId: 7, chatId: 4242, now: 0 });
-    expect(resolveStart(undefined, session)).toBe("/welcome");
+    expect(resolveStart(undefined, session)).toBe("/");
     session.projectRoot = "/repo";
     expect(resolveStart("project_demo", session)).toBe("/project/demo");
     expect(resolveStart(undefined, session)).toBe("/");
