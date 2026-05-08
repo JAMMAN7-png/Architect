@@ -1,4 +1,4 @@
-import type { ModelTier } from "../core/types.ts";
+import type { ModelTier } from "./tiers.ts";
 
 /**
  * Unified LLM interface. Every provider implements ChatProvider; the router

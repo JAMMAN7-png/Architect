@@ -1,0 +1,45 @@
+#!/usr/bin/env node
+// Cross-runtime shim: prefers Bun if available (faster, native TS), falls back to tsx/Node.
+// On install (npm i -g) the package is published with `dist/architect.js` precompiled,
+// so this shim only matters for local dev / git installs. In a published install it
+// runs `dist/architect.js` directly.
+import { spawn } from "node:child_process";
+import { existsSync } from "node:fs";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+
+const here = dirname(fileURLToPath(import.meta.url));
+const root = resolve(here, "..");
+const dist = resolve(root, "dist", "architect.js");
+const src = resolve(root, "src", "cli", "index.ts");
+
+const args = process.argv.slice(2);
+
+function run(cmd, cmdArgs, env = process.env) {
+  const child = spawn(cmd, cmdArgs, { stdio: "inherit", env });
+  child.on("exit", (code) => process.exit(code ?? 0));
+  child.on("error", (err) => {
+    console.error(`architect: failed to spawn ${cmd}: ${err.message}`);
+    process.exit(1);
+  });
+}
+
+// Production (npm install): prefer pre-built dist
+if (existsSync(dist)) {
+  run(process.execPath, [dist, ...args]);
+} else if (existsSync(src)) {
+  // Dev / git install: try bun first
+  const which = spawn(process.platform === "win32" ? "where" : "which", ["bun"], { stdio: "ignore" });
+  which.on("exit", (code) => {
+    if (code === 0) {
+      run("bun", [src, ...args]);
+    } else {
+      // Fall back to tsx if available
+      run("npx", ["-y", "tsx", src, ...args]);
+    }
+  });
+  which.on("error", () => run("npx", ["-y", "tsx", src, ...args]));
+} else {
+  console.error("architect: no entrypoint found (neither dist/architect.js nor src/cli/index.ts)");
+  process.exit(1);
+}

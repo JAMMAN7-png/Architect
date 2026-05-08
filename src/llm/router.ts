@@ -1,5 +1,4 @@
 import type { ArchitectConfig } from "../config/schema.ts";
-import type { ModelTier } from "../core/types.ts";
 import { logger } from "../util/logger.ts";
 import { retry } from "../util/promise.ts";
 import {
@@ -15,6 +14,7 @@ import { DeepSeekProvider } from "./providers/deepseek.ts";
 import { OpenAIProvider } from "./providers/openai.ts";
 import { OpenRouterProvider } from "./providers/openrouter.ts";
 import { XaiProvider } from "./providers/xai.ts";
+import type { ModelTier } from "./tiers.ts";
 
 /** Detect transient errors that are safe to retry. */
 function isTransient(err: unknown): boolean {

@@ -1,7 +1,7 @@
-import type { ResearchFinding } from "../core/types.ts";
 import type { LLMRouter } from "../llm/router.ts";
 import { estimateTokens } from "../llm/tokenizer.ts";
 import type { SearchExcerpt } from "./adapter.ts";
+import type { ResearchFinding } from "./types.ts";
 
 /**
  * The 85%-noise filter: takes raw search excerpts and a research objective,

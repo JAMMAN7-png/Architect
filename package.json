@@ -51,19 +51,21 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.30.0",
-    "openai": "^4.65.0",
     "@iarna/toml": "^2.2.5",
+    "commander": "^14.0.3",
+    "diff": "^7.0.0",
     "eta": "^3.5.0",
+    "grammy": "^1.42.0",
+    "kleur": "^4.1.5",
+    "openai": "^4.65.0",
+    "ora": "^8.1.1",
+    "p-limit": "^6.1.0",
     "pino": "^9.5.0",
     "pino-pretty": "^11.3.0",
-    "zod": "^3.23.8",
-    "p-limit": "^6.1.0",
-    "yargs-parser": "^22.0.0",
-    "kleur": "^4.1.5",
     "prompts": "^2.4.2",
-    "ora": "^8.1.1",
     "tiktoken": "^1.0.20",
-    "diff": "^7.0.0"
+    "yargs-parser": "^22.0.0",
+    "zod": "^3.23.8"
   },
   "devDependencies": {
     "@biomejs/biome": "^1.9.4",

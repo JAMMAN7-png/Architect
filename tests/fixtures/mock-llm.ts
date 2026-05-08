@@ -1,9 +1,8 @@
 import type { ChatProvider, ChatRequest, ChatResponse } from "../../src/llm/adapter.ts";
 
 /**
- * Deterministic mock LLM. Looks up a response by a classifier function
- * (default: matches against the last user message). Falls through to a
- * default response if no rule matches.
+ * Deterministic mock LLM. Rules are evaluated in registration order; the
+ * first match wins. Falls back to a default response when nothing matches.
  */
 export class MockProvider implements ChatProvider {
   readonly id = "mock";
@@ -20,11 +19,11 @@ export class MockProvider implements ChatProvider {
     return this;
   }
 
-  onContains(needle: string, response: Partial<ChatResponse>): this {
-    return this.on((req) => {
-      const last = req.messages[req.messages.length - 1];
-      return Boolean(last?.content.includes(needle));
-    }, response);
+  onSystemContains(needle: string, response: Partial<ChatResponse>): this {
+    return this.on(
+      (req) => req.messages.some((m) => m.role === "system" && m.content.includes(needle)),
+      response,
+    );
   }
 
   available(): boolean {
@@ -33,29 +32,24 @@ export class MockProvider implements ChatProvider {
 
   async chat(req: ChatRequest, modelId: string): Promise<ChatResponse> {
     for (const rule of this.rules) {
-      if (rule.match(req)) {
-        return this.respond(req, modelId, rule.response);
-      }
+      if (rule.match(req)) return this.respond(modelId, rule.response);
     }
-    return this.respond(req, modelId, this.defaultResponse);
+    return this.respond(modelId, this.defaultResponse);
   }
 
-  private respond(
-    _req: ChatRequest,
-    modelId: string,
-    partial: Partial<ChatResponse>,
-  ): ChatResponse {
+  private respond(modelId: string, partial: Partial<ChatResponse>): ChatResponse {
     const text = partial.text ?? "";
     const json = partial.json !== undefined ? partial.json : tryJson(text);
-    return {
+    const base: ChatResponse = {
       provider: "mock",
       model: modelId,
       text,
-      json,
       usage: partial.usage ?? { inputTokens: 0, outputTokens: 0, estimatedUsd: 0 },
       stopReason: partial.stopReason ?? "stop",
       latencyMs: 0,
     };
+    if (json !== undefined) base.json = json;
+    return base;
   }
 }
 

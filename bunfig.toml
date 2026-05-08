@@ -7,3 +7,5 @@ disable = false
 [test]
 coverageReporter = ["text", "lcov"]
 coverageDir = "coverage"
+# Archived v0 tests live under _archive/ — exclude from discovery.
+root = "tests"
