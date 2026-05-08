@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1.7
 
-FROM oven/bun:1.1-alpine AS builder
+FROM oven/bun:1.2-alpine AS builder
 WORKDIR /app
 COPY package.json bun.lock bunfig.toml ./
 RUN bun install --frozen-lockfile
@@ -10,7 +10,7 @@ COPY bin ./bin
 # Typecheck so we fail fast at build time, not runtime.
 RUN bunx tsc --noEmit
 
-FROM oven/bun:1.1-alpine AS runtime
+FROM oven/bun:1.2-alpine AS runtime
 WORKDIR /app
 ENV NODE_ENV=production \
     BOT_PORT=3000
