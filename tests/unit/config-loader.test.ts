@@ -19,7 +19,8 @@ describe("config", () => {
       // Originals untouched
       expect(DEFAULT_CONFIG.models.strategic).not.toBe("anthropic/claude-test");
     } finally {
-      if (prev === undefined) process.env.ARCHITECT_MODEL_STRATEGIC = undefined;
+      // biome-ignore lint/performance/noDelete: env-var cleanup (assignment to undefined would set literal "undefined")
+      if (prev === undefined) delete process.env.ARCHITECT_MODEL_STRATEGIC;
       else process.env.ARCHITECT_MODEL_STRATEGIC = prev;
     }
   });
@@ -42,5 +43,18 @@ describe("config", () => {
 
   it("setKey rejects values that violate schema", () => {
     expect(() => setKey(DEFAULT_CONFIG, "search.noise_filter", 5)).toThrow();
+  });
+
+  it("applyEnvOverrides respects ARCHITECT_MODEL_ENSEMBLE", () => {
+    const prev = process.env.ARCHITECT_MODEL_ENSEMBLE;
+    process.env.ARCHITECT_MODEL_ENSEMBLE = "a/b, c/d ,e/f";
+    try {
+      const cfg = applyEnvOverrides(DEFAULT_CONFIG);
+      expect(cfg.models.ensemble).toEqual(["a/b", "c/d", "e/f"]);
+    } finally {
+      // biome-ignore lint/performance/noDelete: env-var cleanup (assignment to undefined would set literal "undefined")
+      if (prev === undefined) delete process.env.ARCHITECT_MODEL_ENSEMBLE;
+      else process.env.ARCHITECT_MODEL_ENSEMBLE = prev;
+    }
   });
 });

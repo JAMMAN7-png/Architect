@@ -1,6 +1,7 @@
 import type { ArchitectConfig } from "../config/schema.ts";
 import type { ModelTier } from "../core/types.ts";
-import { mapWithCap } from "../util/promise.ts";
+import { logger } from "../util/logger.ts";
+import { retry } from "../util/promise.ts";
 import {
   type ChatProvider,
   type ChatRequest,
@@ -15,6 +16,21 @@ import { OpenAIProvider } from "./providers/openai.ts";
 import { OpenRouterProvider } from "./providers/openrouter.ts";
 import { XaiProvider } from "./providers/xai.ts";
 
+/** Detect transient errors that are safe to retry. */
+function isTransient(err: unknown): boolean {
+  if (err instanceof TypeError) return true;
+  if (err instanceof Error && err.name === "AbortError") return false;
+  const status = (err as { status?: number }).status;
+  if (status != null) {
+    if (status === 408 || status === 425 || status === 429) return true;
+    if (status >= 500) return true;
+    return false;
+  }
+  const msg = err instanceof Error ? err.message : String(err);
+  return /ECONNRESET|ETIMEDOUT|ENOTFOUND|EAI_AGAIN|fetch failed|unknown certificate verification error|UNKNOWN_CERTIFICATE_VERIFICATION_ERROR|socket connection was closed|EPIPE|ECONNREFUSED|Connection error|APIConnectionError/i.test(
+    msg,
+  );
+}
 /**
  * Resolves a tiered request to a concrete provider+model and dispatches.
  * Auto-fallback to OpenRouter when the resolved provider has no key.
@@ -55,25 +71,29 @@ export class LLMRouter {
   async chat(req: ChatRequest): Promise<ChatResponse> {
     const defaults = TIER_DEFAULTS[req.tier];
     const messages = prefixSystem(req.messages, defaults.systemPrefix);
-
     const requestedModel = req.modelOverride ?? this.modelFor(req.tier);
     const requested = resolveModel(requestedModel);
     const provider = this.providers[requested.provider];
 
+    const chatReq = {
+      ...req,
+      messages,
+      temperature: req.temperature ?? defaults.temperature,
+      maxTokens: req.maxTokens ?? defaults.maxTokens,
+    };
+
     if (!provider || !provider.available()) {
-      // Fallback path: route through OpenRouter using the original model id as the OR slug.
+      // Fallback path: route through OpenRouter; pass the original model slug.
       const orProvider = this.providers.openrouter;
       if (orProvider?.available()) {
-        const orModelId = `openrouter/${requestedModel.replace(/^[^/]+\//, "")}`;
-        return orProvider.chat(
-          {
-            ...req,
-            messages,
-            temperature: req.temperature ?? defaults.temperature,
-            maxTokens: req.maxTokens ?? defaults.maxTokens,
-          },
-          orModelId,
-        );
+        const orModelId = requestedModel;
+        return retry(() => orProvider.chat(chatReq, orModelId), {
+          attempts: 4,
+          baseMs: 500,
+          maxMs: 8_000,
+          signal: req.signal,
+          shouldRetry: isTransient,
+        });
       }
       throw new MissingProviderError(
         req.tier,
@@ -82,15 +102,13 @@ export class LLMRouter {
       );
     }
 
-    return provider.chat(
-      {
-        ...req,
-        messages,
-        temperature: req.temperature ?? defaults.temperature,
-        maxTokens: req.maxTokens ?? defaults.maxTokens,
-      },
-      requestedModel,
-    );
+    return retry(() => provider.chat(chatReq, requestedModel), {
+      attempts: 4,
+      baseMs: 500,
+      maxMs: 8_000,
+      signal: req.signal,
+      shouldRetry: isTransient,
+    });
   }
 
   /**
@@ -102,9 +120,27 @@ export class LLMRouter {
     if (ids.length === 0) {
       throw new Error("ensembleChat: models.ensemble is empty");
     }
-    return mapWithCap(ids, ids.length, (id) =>
-      this.chat({ ...base, tier: "ensemble", modelOverride: id }),
+    const results = await Promise.allSettled(
+      ids.map((id) => this.chat({ ...base, tier: "ensemble", modelOverride: id })),
     );
+    const fulfilled: ChatResponse[] = [];
+    const failures: string[] = [];
+    for (let i = 0; i < results.length; i++) {
+      const r = results[i];
+      if (!r) continue;
+      if (r.status === "fulfilled") {
+        fulfilled.push(r.value);
+      } else {
+        const id = ids[i];
+        const msg = r.reason instanceof Error ? r.reason.message : String(r.reason);
+        logger.warn(`ensembleChat: provider ${id} failed: ${msg}`);
+        failures.push(`${id}: ${msg}`);
+      }
+    }
+    if (failures.length === ids.length) {
+      throw new Error(`ensembleChat: all providers failed: ${failures.join("; ")}`);
+    }
+    return fulfilled;
   }
 }
 

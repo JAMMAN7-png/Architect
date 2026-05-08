@@ -39,6 +39,12 @@ export function applyEnvOverrides(cfg: ArchitectConfig): ArchitectConfig {
   if (env.ARCHITECT_MODEL_EXECUTION) next.models.execution = env.ARCHITECT_MODEL_EXECUTION;
   if (env.ARCHITECT_MODEL_UI) next.models.ui = env.ARCHITECT_MODEL_UI;
   if (env.ARCHITECT_MODEL_FALLBACK) next.models.fallback = env.ARCHITECT_MODEL_FALLBACK;
+  // ARCHITECT_MODEL_ENSEMBLE: comma-separated list of model slugs for the ensemble tier.
+  if (env.ARCHITECT_MODEL_ENSEMBLE) {
+    next.models.ensemble = env.ARCHITECT_MODEL_ENSEMBLE.split(",")
+      .map((s) => s.trim())
+      .filter(Boolean);
+  }
   if (env.ARCHITECT_SEARCH_PROVIDER) {
     const v = env.ARCHITECT_SEARCH_PROVIDER;
     if (v === "firecrawl" || v === "parallel") next.search.provider = v;

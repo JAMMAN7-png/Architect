@@ -1,7 +1,7 @@
 import { readdir } from "node:fs/promises";
 import { join, relative } from "node:path";
 import { joinUnix, pathExists } from "../util/fs.ts";
-import { ROOT_DOCS_WHITELIST, SERVICE_DOCS_WHITELIST, buildRegistry } from "./registry.ts";
+import { ROOT_DOCS_WHITELIST, SERVICE_DOCS_WHITELIST } from "./registry.ts";
 
 export interface Violation {
   path: string;
@@ -59,7 +59,7 @@ export async function verify(outDir: string): Promise<VerifyResult> {
     // Forbid .md anywhere in <svc>/src/
     const srcDir = join(svc, "src");
     if (await pathExists(srcDir)) {
-      for await (const f of walkMdAll(srcDir)) {
+      for await (const f of walkMd(srcDir)) {
         violations.push({
           path: joinUnix(relative(outDir, f)),
           reason: ".md inside <service>/src/ is forbidden",
@@ -75,13 +75,9 @@ export async function verify(outDir: string): Promise<VerifyResult> {
       path: joinUnix(relative(outDir, regPath)),
       reason: "doc-registry.md missing — run `architect generate` or `architect new`",
     });
-  } else {
-    // ensure registry contains every doc we just checked.
-    const entries = await buildRegistry(outDir, { phase: 7 });
-    const expected = new Set(entries.map((e) => e.path));
-    // No additional check beyond existence here; entries are already a derivation of the walk.
-    void expected;
   }
+  // Registry hash check is intentionally deferred to a future phase.
+  // buildRegistry produces deterministic hashes; verify only enforces presence today.
 
   return { ok: violations.length === 0, checked, violations };
 }
@@ -103,10 +99,6 @@ async function* walkMd(dir: string): AsyncGenerator<string, void, void> {
       else if (e.isFile() && e.name.endsWith(".md")) yield p;
     }
   }
-}
-
-async function* walkMdAll(dir: string): AsyncGenerator<string, void, void> {
-  yield* walkMd(dir);
 }
 
 async function listServiceDirs(outDir: string): Promise<string[]> {

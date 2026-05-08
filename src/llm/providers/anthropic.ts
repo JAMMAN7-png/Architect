@@ -1,5 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import type { ChatProvider, ChatRequest, ChatResponse } from "../adapter.ts";
+import { extractJson } from "../json-extract.ts";
 import { estimateUsd, resolveModel } from "../models.ts";
 
 /**
@@ -54,7 +55,7 @@ export class AnthropicProvider implements ChatProvider {
 
     const inputTokens = res.usage.input_tokens;
     const outputTokens = res.usage.output_tokens;
-    const json = tryParseJson(text, req.jsonSchema);
+    const json = req.jsonSchema ? extractJson(text) : undefined;
 
     return {
       provider: this.id,
@@ -84,19 +85,4 @@ function mapStop(s: string | null): ChatResponse["stopReason"] {
     default:
       return "other";
   }
-}
-
-function tryParseJson(text: string, schema: object | undefined): unknown {
-  if (!schema) return undefined;
-  const trimmed = stripFences(text).trim();
-  try {
-    return JSON.parse(trimmed);
-  } catch {
-    return undefined;
-  }
-}
-
-function stripFences(text: string): string {
-  const m = text.match(/```(?:json)?\n([\s\S]*?)\n```/);
-  return m ? (m[1] ?? text) : text;
 }

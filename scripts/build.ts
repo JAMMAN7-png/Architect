@@ -10,8 +10,10 @@
  */
 
 import { spawnSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
 
-const pkg = JSON.parse(await Bun.file(new URL("../package.json", import.meta.url).pathname).text());
+const pkgPath = fileURLToPath(new URL("../package.json", import.meta.url));
+const pkg = JSON.parse(await Bun.file(pkgPath).text());
 const version: string = pkg.version;
 
 const args = process.argv.slice(2);
@@ -30,10 +32,9 @@ const outVal = out ?? outEq?.split("=", 2)[1] ?? defaultOut(compile, targetVal);
 const cmd = ["build", "src/cli/index.ts"];
 if (compile) cmd.push("--compile");
 if (targetVal) cmd.push(`--target=${targetVal}`);
-else if (!compile) cmd.push("--target=bun");
+else if (!compile) cmd.push("--target=node");
 cmd.push(`--outfile=${outVal}`);
 cmd.push("--define", `ARCHITECT_VERSION=${JSON.stringify(version)}`);
-
 const result = spawnSync("bun", cmd, { stdio: "inherit" });
 process.exit(result.status ?? 1);
 

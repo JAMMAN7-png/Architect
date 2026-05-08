@@ -3,7 +3,7 @@
  * a 3.5-chars-per-token heuristic for everything else. Good enough for budget
  * gating; not used for billing.
  */
-import { encoding_for_model, get_encoding } from "tiktoken";
+import { get_encoding } from "tiktoken";
 
 let cl100k: ReturnType<typeof get_encoding> | null = null;
 
@@ -38,5 +38,8 @@ export function estimateChatTokens(messages: { role: string; content: string }[]
   return sum + 2;
 }
 
-// Exported for tests.
-export const _internals = { encoding_for_model };
+/** Release the cached tiktoken encoder WASM allocation, if initialized. */
+export function disposeTokenizer(): void {
+  cl100k?.free?.();
+  cl100k = null;
+}

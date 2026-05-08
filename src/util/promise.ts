@@ -21,13 +21,22 @@ export function sleep(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
 }
 
-/** Retry an async fn with exponential backoff. */
+/** Retry an async fn with exponential backoff.
+ * @param shouldRetry optional predicate to decide whether an error is retryable; defaults to always retry.
+ */
 export async function retry<T>(
   fn: () => Promise<T>,
-  opts: { attempts?: number; baseMs?: number; maxMs?: number; signal?: AbortSignal } = {},
+  opts: {
+    attempts?: number;
+    baseMs?: number;
+    maxMs?: number;
+    signal?: AbortSignal;
+    shouldRetry?: (err: unknown) => boolean;
+  } = {},
 ): Promise<T> {
   const attempts = opts.attempts ?? 4;
   const baseMs = opts.baseMs ?? 250;
+  const shouldRetry = opts.shouldRetry ?? (() => true);
   const maxMs = opts.maxMs ?? 8_000;
   let lastErr: unknown;
   for (let i = 0; i < attempts; i++) {
@@ -36,7 +45,7 @@ export async function retry<T>(
       return await fn();
     } catch (err) {
       lastErr = err;
-      if (i === attempts - 1) break;
+      if (!shouldRetry(err) || i === attempts - 1) break;
       const delay = Math.min(maxMs, baseMs * 2 ** i);
       await sleep(delay);
     }

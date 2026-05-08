@@ -1,4 +1,5 @@
 import { join } from "node:path";
+import pLimit from "p-limit";
 import {
   genDependencyGraph,
   genEventMap,
@@ -30,7 +31,7 @@ import { type SparkInput, writeSpark } from "../brainstorm/spec-writer.ts";
 import { loadConfig } from "../config/loader.ts";
 import { LLMRouter } from "../llm/router.ts";
 import { filterFindings, resolveSearchProvider } from "../search/index.ts";
-import { joinUnix, readFileMaybe, writeFileSafe } from "../util/fs.ts";
+import { readFileMaybe, writeFileSafe } from "../util/fs.ts";
 import { fmtUsd } from "../util/io.ts";
 import { slugify } from "../util/io.ts";
 import { logger } from "../util/logger.ts";
@@ -39,6 +40,14 @@ import { mapWithCap } from "../util/promise.ts";
 import { buildRegistry, renderRegistryMd } from "./registry.ts";
 import type { Blueprint, BlueprintService, ResearchFinding, Spark } from "./types.ts";
 
+const totalCost = { usd: 0, inputTokens: 0, outputTokens: 0 };
+function track(res: {
+  usage: { inputTokens: number; outputTokens: number; estimatedUsd: number };
+}) {
+  totalCost.usd += res.usage.estimatedUsd;
+  totalCost.inputTokens += res.usage.inputTokens;
+  totalCost.outputTokens += res.usage.outputTokens;
+}
 const TOTAL_PHASES = 8; // 0-7
 
 export interface PipelineOptions {
@@ -60,10 +69,10 @@ export async function runPipeline(opts: PipelineOptions): Promise<void> {
   const cfg = await loadConfig();
   const router = new LLMRouter(cfg);
   const progress = new Progress();
+  // Bounds total LLM calls in flight to avoid provider rate limits.
+  const llmGate = pLimit(8);
   const start = opts.startPhase ?? 0;
   const stop = opts.stopAfterPhase ?? TOTAL_PHASES - 1;
-
-  const totalUsd = 0;
 
   // Phase 0 — Spark
   let spark: Spark | null = null;
@@ -74,6 +83,10 @@ export async function runPipeline(opts: PipelineOptions): Promise<void> {
     );
     spark = await capturePhase0(router, cfg, opts);
     await writeFileSafe(join(opts.out, "docs/spark.md"), writeSpark(toSparkInput(spark)));
+    await writeFileSafe(
+      join(opts.out, "docs/.architect/spark.json"),
+      JSON.stringify(spark, null, 2),
+    );
     progress.succeed(`spark frozen: ${spark.slug}`);
   } else {
     spark = await loadSpark(opts.out);
@@ -102,6 +115,10 @@ export async function runPipeline(opts: PipelineOptions): Promise<void> {
       join(opts.out, "docs/blueprint.draft.md"),
       renderBlueprintMd(blueprintDraft),
     );
+    await writeFileSafe(
+      join(opts.out, "docs/.architect/blueprint.draft.json"),
+      JSON.stringify(blueprintDraft, null, 2),
+    );
     progress.succeed(`blueprint draft: ${blueprintDraft.services.length} services`);
   } else {
     blueprintDraft = await loadBlueprint(opts.out, "draft");
@@ -112,6 +129,10 @@ export async function runPipeline(opts: PipelineOptions): Promise<void> {
     progress.start({ index: 2, total: TOTAL_PHASES, name: "Phase 2 — QA attack review" }, "");
     const reviews = await runQaReview(router, blueprintDraft);
     await writeFileSafe(join(opts.out, "docs/qa/blueprint-review.md"), renderQaReviewMd(reviews));
+    await writeFileSafe(
+      join(opts.out, "docs/.architect/qa-review.json"),
+      JSON.stringify(reviews, null, 2),
+    );
     const totals = reviews.reduce((n, r) => n + r.findings.length, 0);
     progress.succeed(`qa: ${totals} findings across ${reviews.length} perspectives`);
 
@@ -120,22 +141,47 @@ export async function runPipeline(opts: PipelineOptions): Promise<void> {
       progress.start({ index: 3, total: TOTAL_PHASES, name: "Phase 3 — Revise + freeze" }, "");
       const revised = await reviseBlueprint(router, blueprintDraft, reviews);
       await writeFileSafe(join(opts.out, "docs/blueprint.md"), renderBlueprintMd(revised));
+      await writeFileSafe(
+        join(opts.out, "docs/.architect/blueprint.json"),
+        JSON.stringify(revised, null, 2),
+      );
       blueprintDraft = revised;
       progress.succeed(`blueprint frozen: ${revised.services.length} services`);
     }
   }
 
-  const blueprint = blueprintDraft ?? (await loadBlueprint(opts.out, "frozen"));
+  // Standalone Phase 3 (revise + freeze) when starting at phase 3 directly.
+  if (start === 3 && stop >= 3 && blueprintDraft) {
+    progress.start({ index: 3, total: TOTAL_PHASES, name: "Phase 3 — Revise + freeze" }, "");
+    const reviewsJson = await readFileMaybe(join(opts.out, "docs/.architect/qa-review.json"));
+    if (!reviewsJson) {
+      throw new Error(
+        "phase 3 standalone: docs/.architect/qa-review.json missing — run phase 2 first",
+      );
+    }
+    const reviews = JSON.parse(reviewsJson);
+    const revised = await reviseBlueprint(router, blueprintDraft, reviews);
+    await writeFileSafe(join(opts.out, "docs/blueprint.md"), renderBlueprintMd(revised));
+    await writeFileSafe(
+      join(opts.out, "docs/.architect/blueprint.json"),
+      JSON.stringify(revised, null, 2),
+    );
+    blueprintDraft = revised;
+    progress.succeed(`blueprint frozen: ${revised.services.length} services`);
+  }
+
+  const frozen = await loadBlueprint(opts.out, "frozen");
+  const blueprint = frozen ?? blueprintDraft;
   if (!blueprint) throw new Error("pipeline: no blueprint available — run phases 1-3 first");
 
   // Phase 4 — service map (architecture docs)
   if (start <= 4 && stop >= 4) {
     progress.start({ index: 4, total: TOTAL_PHASES, name: "Phase 4 — Architecture docs" }, "");
     const [overview, map, graph, eventMap] = await Promise.all([
-      genSystemOverview(router, blueprint),
-      genServiceMap(router, blueprint),
+      llmGate(() => genSystemOverview(router, blueprint)),
+      llmGate(() => genServiceMap(router, blueprint)),
       genDependencyGraph(router, blueprint),
-      genEventMap(router, blueprint),
+      llmGate(() => genEventMap(router, blueprint)),
     ]);
     await Promise.all([
       writeFileSafe(join(opts.out, "docs/architecture/system-overview.md"), overview),
@@ -152,18 +198,35 @@ export async function runPipeline(opts: PipelineOptions): Promise<void> {
       { index: 5, total: TOTAL_PHASES, name: "Phase 5 — Per-service fanout" },
       `${blueprint.services.length} services × 8 docs`,
     );
-    await mapWithCap(blueprint.services, 6, async (service) => {
+    await mapWithCap(blueprint.services, 16, async (service) => {
       const dir = join(opts.out, service.domain || "services", service.id, "docs");
+      const reqDocs = [
+        "spark.md",
+        "blueprint.md",
+        "api-contract.md",
+        "data-model.md",
+        "events.md",
+        "build-tasks.md",
+        "acceptance.md",
+        "dependencies.md",
+      ];
+      const allExist = (await Promise.all(reqDocs.map((d) => readFileMaybe(join(dir, d))))).every(
+        (s) => s != null,
+      );
+      if (allExist) {
+        progress.update(`skipped ${service.id} (cached)`);
+        return;
+      }
       const args = { router, spark: spark as Spark, blueprint, service };
       const [sparkMd, bpMd, apiMd, dataMd, eventsMd, tasksMd, accMd, depsMd] = await Promise.all([
-        genServiceSpark(args),
-        genServiceBlueprint(args),
-        genApiContract(args),
-        genDataModel(args),
-        genEvents(args),
-        genBuildTasks(args),
-        genAcceptance(args),
-        genDependencies(args),
+        llmGate(() => genServiceSpark(args)),
+        llmGate(() => genServiceBlueprint(args)),
+        llmGate(() => genApiContract(args)),
+        llmGate(() => genDataModel(args)),
+        llmGate(() => genEvents(args)),
+        llmGate(() => genBuildTasks(args)),
+        llmGate(() => genAcceptance(args)),
+        llmGate(() => genDependencies(args)),
       ]);
       await Promise.all([
         writeFileSafe(join(dir, "spark.md"), sparkMd),
@@ -200,7 +263,13 @@ export async function runPipeline(opts: PipelineOptions): Promise<void> {
     progress.succeed(`registry: ${entries.length} entries`);
   }
 
-  logger.info({ totalUsd: fmtUsd(totalUsd) }, "pipeline complete");
+  logger.info(
+    {
+      totalUsd: fmtUsd(totalCost.usd),
+      tokens: { input: totalCost.inputTokens, output: totalCost.outputTokens },
+    },
+    "pipeline complete",
+  );
 }
 
 async function capturePhase0(
@@ -232,6 +301,7 @@ async function capturePhase0(
     jsonSchema: {},
     maxTokens: 2000,
   });
+  track(res);
   const json = res.json as
     | {
         slug: string;
@@ -306,24 +376,32 @@ function escapeRe(s: string): string {
 }
 
 async function loadSpark(out: string): Promise<Spark | null> {
+  const jsonPath = join(out, "docs/.architect/spark.json");
+  const raw = await readFileMaybe(jsonPath);
+  if (raw) {
+    try {
+      return JSON.parse(raw) as Spark;
+    } catch {
+      // fall through to markdown path
+    }
+  }
   const md = await readFileMaybe(join(out, "docs/spark.md"));
   if (!md) return null;
   return parseSparkFromMd(md, "");
 }
 
 async function loadBlueprint(out: string, which: "draft" | "frozen"): Promise<Blueprint | null> {
-  // Blueprint is rendered as markdown for humans, but the JSON stays in memory only.
-  // For phase resume, we re-derive from the markdown — but for now, require pipeline
-  // to keep the in-memory copy. If neither exists, throw.
   const path =
-    which === "draft" ? join(out, "docs/blueprint.draft.md") : join(out, "docs/blueprint.md");
-  const exists = await readFileMaybe(path);
-  if (!exists) return null;
-  // Blueprint markdown is a derived view; we can't reverse-parse it to JSON reliably.
-  // For phase resume, the user should rerun from phase 1.
-  throw new Error(
-    "pipeline: cannot resume from disk-only blueprint. Re-run `architect new` from phase 1 (use --start-phase 1).",
-  );
+    which === "draft"
+      ? join(out, "docs/.architect/blueprint.draft.json")
+      : join(out, "docs/.architect/blueprint.json");
+  const raw = await readFileMaybe(path);
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw) as Blueprint;
+  } catch {
+    return null;
+  }
 }
 
 async function readPerServiceDigest(
@@ -367,8 +445,6 @@ async function runResearch(
     processor: "base",
     maxResults: 30,
   });
-  // Voiding unused router/cfg path: we still want to filter
-  void joinUnix; // keep import alive
   const filtered = await filterFindings(router, objective, result.excerpts, {
     noiseRatio: cfg.search.noise_filter,
     perQueryCap: cfg.search.per_query_cap,

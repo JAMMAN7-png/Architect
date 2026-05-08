@@ -1,4 +1,4 @@
-import type { Blueprint } from "../core/types.ts";
+import type { Blueprint, QaFinding } from "../core/types.ts";
 import type { LLMRouter } from "../llm/router.ts";
 
 const SYSTEM = `You are reviewing a generated docs tree for cross-service consistency.
@@ -21,7 +21,7 @@ export async function runCrossServiceReview(
   router: LLMRouter,
   blueprint: Blueprint,
   digest: { service: string; blueprint: string; apiContract: string; dependencies: string }[],
-): Promise<unknown[]> {
+): Promise<QaFinding[]> {
   const userPrompt = [
     "## Blueprint",
     "```json",
@@ -43,6 +43,6 @@ export async function runCrossServiceReview(
     jsonSchema: {},
     maxTokens: 4000,
   });
-  const json = res.json as { findings?: unknown[] } | undefined;
+  const json = res.json as { findings?: QaFinding[] } | undefined;
   return json?.findings ?? [];
 }

@@ -57,40 +57,48 @@ export async function buildRegistry(
 
   // Root docs/
   const rootDocs = join(outDir, "docs");
-  for await (const file of walkMd(rootDocs)) {
-    const rel = joinUnix(relative(rootDocs, file));
-    const kind = inferKindFromRoot(rel);
-    if (!kind) continue; // skip files outside whitelist (verify.ts will flag)
-    const content = await readFile(file, "utf8");
-    entries.push({
-      path: joinUnix("docs", rel),
-      scope: kind.scope,
-      kind: kind.kind,
-      phase: opts.phase ?? 0,
-      sha256: sha256(content),
-      generatedAt: new Date().toISOString(),
-    });
-  }
+  const rootFiles: string[] = [];
+  for await (const file of walkMd(rootDocs)) rootFiles.push(file);
+  await Promise.all(
+    rootFiles.map(async (file) => {
+      const rel = joinUnix(relative(rootDocs, file));
+      const kind = inferKindFromRoot(rel);
+      if (!kind) return; // skip files outside whitelist (verify.ts will flag)
+      const content = await readFile(file, "utf8");
+      entries.push({
+        path: joinUnix("docs", rel),
+        scope: kind.scope,
+        kind: kind.kind,
+        phase: opts.phase ?? 0,
+        sha256: sha256(content),
+        generatedAt: new Date().toISOString(),
+      });
+    }),
+  );
 
   // Per-service <svc>/docs/
   const svcDirs = await listServiceDirs(outDir);
   for (const svcDir of svcDirs) {
     const docsDir = join(svcDir, "docs");
-    for await (const file of walkMd(docsDir)) {
-      const rel = joinUnix(relative(docsDir, file));
-      if (!(SERVICE_DOCS_WHITELIST as readonly string[]).includes(rel)) continue;
-      const content = await readFile(file, "utf8");
-      const svcName = relative(outDir, svcDir).split(/[\\/]/).pop() ?? "";
-      entries.push({
-        path: joinUnix(relative(outDir, file)),
-        scope: "service",
-        serviceId: svcName,
-        kind: rel.replace(/\.md$/, ""),
-        phase: opts.phase ?? 5,
-        sha256: sha256(content),
-        generatedAt: new Date().toISOString(),
-      });
-    }
+    const svcFiles: string[] = [];
+    for await (const file of walkMd(docsDir)) svcFiles.push(file);
+    await Promise.all(
+      svcFiles.map(async (file) => {
+        const rel = joinUnix(relative(docsDir, file));
+        if (!(SERVICE_DOCS_WHITELIST as readonly string[]).includes(rel)) return;
+        const content = await readFile(file, "utf8");
+        const svcName = relative(outDir, svcDir).split(/[\\/]/).pop() ?? svcDir;
+        entries.push({
+          path: joinUnix(relative(outDir, file)),
+          scope: "service",
+          serviceId: svcName,
+          kind: rel.replace(/\.md$/, ""),
+          phase: opts.phase ?? 5,
+          sha256: sha256(content),
+          generatedAt: new Date().toISOString(),
+        });
+      }),
+    );
   }
 
   return entries.sort((a, b) => a.path.localeCompare(b.path));

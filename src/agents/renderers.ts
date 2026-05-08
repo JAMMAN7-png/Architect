@@ -90,7 +90,7 @@ export function renderQaReviewMd(reviews: QaReview[]): string {
   return lines.join("\n");
 }
 
-export function renderCrossServiceMd(findings: unknown[]): string {
+export function renderCrossServiceMd(findings: QaFinding[]): string {
   const lines: string[] = [];
   lines.push("# Cross-Service Consistency Review");
   lines.push("");
@@ -100,12 +100,12 @@ export function renderCrossServiceMd(findings: unknown[]): string {
     lines.push("_No cross-service inconsistencies detected._");
     return lines.join("\n");
   }
-  for (const f of findings as QaFinding[]) {
-    lines.push(`### \`${f.severity ?? "info"}\` · ${f.scope ?? ""}`);
+  for (const f of findings) {
+    lines.push(`### \`${f.severity}\` · ${f.scope}`);
     lines.push("");
-    lines.push(`**Problem:** ${f.problem ?? ""}`);
+    lines.push(`**Problem:** ${f.problem}`);
     lines.push("");
-    lines.push(`**Recommendation:** ${f.recommendation ?? ""}`);
+    lines.push(`**Recommendation:** ${f.recommendation}`);
     lines.push("");
   }
   return lines.join("\n");

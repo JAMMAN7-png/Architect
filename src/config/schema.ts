@@ -39,7 +39,6 @@ export type BrainstormConfig = z.infer<typeof BrainstormConfig>;
 
 export const OutputConfig = z
   .object({
-    per_service_root: z.string().default(""),
     ui_enabled: z.boolean().default(false),
     git_init: z.boolean().default(true),
   })

@@ -76,6 +76,8 @@ export async function runBrainstormSession(opts: {
       parsed = JSON.parse(stripFences(res.text));
     } catch {
       console.log(kleur.yellow("(brainstorm: model returned non-JSON, retrying)"));
+      // Keep the bad assistant turn in dialogue so the model sees what it said and avoids repeating the mistake.
+      dialogue.push({ role: "assistant", content: res.text });
       dialogue.push({
         role: "user",
         content:
